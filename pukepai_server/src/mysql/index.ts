@@ -1,3 +1,7 @@
+/*
+ * @author: sharkgao
+ * @LastEditors: sharkgao
+ */
 import * as mysql from 'mysql2/promise';
 
 // 单例模式
@@ -16,7 +20,7 @@ export default class mysqlPool {
     return mysql.createPool({
       host: process.env.DOCKER_MYSQL || 'localhost',
       user: 'root',
-      password: "liangziaha0204", // mysql 密码
+      password: "12345", // mysql 密码
       database: 'playing_card',
       port: 3306,
       waitForConnections: true,
