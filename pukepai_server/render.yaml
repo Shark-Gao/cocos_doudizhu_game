@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: doudizhu-game-server
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node scripts/init-postgres.js; npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: postgresql://postgres:_Aaa92818137@db.xovzplyeneqbgfymronn.supabase.co:5432/postgres
