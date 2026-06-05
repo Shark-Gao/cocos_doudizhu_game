@@ -34,7 +34,7 @@ app.use(koaBody());
 // 中间件添加router
 const router = loader(path.resolve(__dirname, './router'));
 // allowedMethods: 将路由挂载到 Koa 应用（接口）
-app.use(router.routes()).use(router.allowedMethods());
+app.use(mount('/api', router.routes())).use(mount('/api', router.allowedMethods()));
 
 // 这里我们监听在 3002 端口
 let server = app.listen(3002, () => {

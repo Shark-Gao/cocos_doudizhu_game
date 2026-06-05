@@ -29,8 +29,27 @@ class PostgresPool {
   private static getPool() {
     if (!this._pool) {
       const { Pool } = require('pg');
+      
+      // 优先使用DATABASE_URL，如果没有则使用分离的环境变量构建连接字符串
+      let connectionString = process.env.DATABASE_URL;
+      if (!connectionString) {
+        const dbHost = process.env.DB_HOST;
+        const dbPort = process.env.DB_PORT || '5432';
+        const dbName = process.env.DB_NAME || 'doudizhu_game';
+        const dbUser = process.env.DB_USER;
+        const dbPassword = process.env.DB_PASSWORD;
+        
+        if (dbHost && dbUser && dbPassword) {
+          connectionString = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}`;
+        }
+      }
+      
+      if (!connectionString) {
+        throw new Error('PostgreSQL connection string not found. Please set DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD environment variables.');
+      }
+      
       this._pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
+        connectionString: connectionString,
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         max: 10,
         idleTimeoutMillis: 60000,
