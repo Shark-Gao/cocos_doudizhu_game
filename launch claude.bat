@@ -1,0 +1,1 @@
+start powershell claude-internal --dangerously-skip-permissions

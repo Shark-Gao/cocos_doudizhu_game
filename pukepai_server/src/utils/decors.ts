@@ -133,25 +133,9 @@ export const patch = method('patch');
 // 动态加载所有的路由装饰器，注册路由
 export const loader = (folder: string, options: loadOptions = {}): KoaRouter => {
   const extname = options?.extname || '.{js,ts}';
-  
-  try {
-    // glog递归去获取文件
-    const files = glog.sync(`${folder}/**/*${extname}`);
-    console.log(`[Route Loader] Found ${files.length} route files in ${folder}`);
-    
-    files.forEach((file, index) => {
-      try {
-        console.log(`[Route Loader] Loading route file ${index + 1}/${files.length}: ${file}`);
-        require(file);
-      } catch (error) {
-        console.error(`[Route Loader] Error loading route file ${file}:`, error);
-      }
-    });
-    
-    console.log(`[Route Loader] All routes loaded successfully`);
-  } catch (error) {
-    console.error('[Route Loader] Error scanning route files:', error);
-  }
+  // glog递归去获取文件
+  const files = glog.sync(`${folder}/**/*${extname}`);
+  files.forEach(file => require(file));
 
   return router;
 }

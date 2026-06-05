@@ -103,6 +103,10 @@ customFetch.addRequestInterceptor((options) => {
 customFetch.addResponseInterceptor(async (response, errMsgTip) => {
     loadingCount--;
     console.log("响应拦截器", response)
+    console.log("[Debug] response.status =", response.status);
+    console.log("[Debug] response.ok =", response.ok);
+    console.log("[Debug] response.headers content-type =", response.headers?.get?.("content-type"));
+    
     if (loadingCount == 0) {
         CommonUIManager.inst.hideLoading();
     }
@@ -110,7 +114,14 @@ customFetch.addResponseInterceptor(async (response, errMsgTip) => {
     if (window.wx) {
         data = response;
     } else {
-        data = await response.json();
+        try {
+            data = await response.json();
+            console.log("[Debug] 解析 JSON 成功:", data);
+        } catch (e) {
+            const text = await response.clone().text().catch(()=> "<read text failed>");
+            console.error("[Debug] JSON 解析失败，原始响应文本:", text);
+            console.error("[Debug] 错误:", e);
+        }
     }
     console.log("响应拦截器", data)
     if (data.code == 401) {
