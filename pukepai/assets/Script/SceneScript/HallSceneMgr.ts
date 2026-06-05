@@ -17,6 +17,12 @@ enum CreateRoomType {
     MatchRoom // 匹配房间
 }
 
+// 玩法类型枚举
+export enum GameMode {
+    Doudizhu = 0, // 斗地主玩法
+    Shuangjian = 1  // 双剑玩法
+}
+
 @ccclass('HallSceneMgr')
 export class HallSceneMgr extends Component {
 
@@ -25,6 +31,13 @@ export class HallSceneMgr extends Component {
         displayName: "选择等级"
     })
     selectLevel = null;
+    
+    @property({
+        type: Node,
+        displayName: "玩法选择节点"
+    })
+    gameModeSelect = null;
+    
     @property({
         type: Node,
         displayName: "用户名称"
@@ -77,6 +90,7 @@ export class HallSceneMgr extends Component {
     selectLevelNum: any = 0; // 选择等级
     matchTimer: number = 0; // 匹配时间
     wxLaunchOptions: any = {}; // 微信启动参数
+    selectedGameMode: GameMode = GameMode.Doudizhu; // 默认斗地主玩法
 
     protected async onLoad() {
         // 预加载资源
@@ -303,10 +317,18 @@ export class HallSceneMgr extends Component {
 
     selectLevelShow() {
         this.selectLevel.active = true;
+        // 如果存在玩法选择节点，也显示
+        if (this.gameModeSelect) {
+            this.gameModeSelect.active = true;
+        }
     }
 
     selectLevelHide() {
         this.selectLevel.active = false;
+        // 如果存在玩法选择节点，也隐藏
+        if (this.gameModeSelect) {
+            this.gameModeSelect.active = false;
+        }
     }
 
 
@@ -322,13 +344,18 @@ export class HallSceneMgr extends Component {
 
     // 匹配房间
     async matchRoom() {
+        // 获取当前选择的玩法类型
+        const gameMode = this.getSelectedGameMode();
+        console.log("gameMode", gameMode)
+        
         // await 等待连接成功返回
         const socketInstance = await WebsocketMgr.instance({ url: "/matching" });
 
         socketInstance.send({
             type: "match",
             params: {
-                level: this.selectLevelNum
+                level: this.selectLevelNum,
+                gameMode: gameMode
             }
         });
     }
@@ -386,13 +413,17 @@ export class HallSceneMgr extends Component {
 
     // 取消匹配
     async cancelMatch() {
+        // 获取当前选择的玩法类型
+        const gameMode = this.getSelectedGameMode();
+        
         // await 等待连接成功返回
         const socketInstance = await WebsocketMgr.instance({ url: "/matching" });
 
         socketInstance.send({
             type: "cancelMatch",
             params: {
-                level: this.selectLevelNum
+                level: this.selectLevelNum,
+                gameMode: gameMode
             }
         });
     }
@@ -401,9 +432,14 @@ export class HallSceneMgr extends Component {
     // 创建房间
     async createRoom(event, level) {
         console.log("level", level)
+        // 获取当前选择的玩法类型
+        const gameMode = this.getSelectedGameMode();
+        console.log("gameMode", gameMode)
+        
         // await 等待连接成功返回
         let res = await post("/createRoom", {
-            level
+            level,
+            gameMode: gameMode
         })
 
         if (res.code == 200) {
@@ -577,11 +613,45 @@ export class HallSceneMgr extends Component {
         }
     }
 
+    // 获取当前选择的玩法类型
+    private getSelectedGameMode(): GameMode {
+        if (!this.gameModeSelect) return GameMode.Doudizhu;
+        
+        // 查找选中的radio按钮
+        const radioButtons = this.gameModeSelect.children;
+        for (let i = 0; i < radioButtons.length; i++) {
+            const radioButton = radioButtons[i];
+            const checkmark = radioButton.getChildByName("Checkmark");
+            if (checkmark && checkmark.active) {
+                // 根据按钮索引判断玩法类型（第一个按钮为0，第二个按钮为1）
+                return i === 0 ? GameMode.Doudizhu : GameMode.Shuangjian;
+            }
+        }
+        return GameMode.Doudizhu; // 默认返回斗地主
+    }
+
+    // 玩法选择切换
+    onGameModeSelected(event, gameMode: GameMode) {
+        console.log("选择的玩法:", gameMode);
+        this.selectedGameMode = gameMode;
+        
+        // 更新所有radio按钮的状态
+        if (this.gameModeSelect) {
+            const radioButtons = this.gameModeSelect.children;
+            for (let i = 0; i < radioButtons.length; i++) {
+                const radioButton = radioButtons[i];
+                const checkmark = radioButton.getChildByName("Checkmark");
+                if (checkmark) {
+                    // 根据按钮索引判断是否选中（第一个按钮为0，第二个按钮为1）
+                    checkmark.active = (gameMode === GameMode.Doudizhu && i === 0) || 
+                                      (gameMode === GameMode.Shuangjian && i === 1);
+                }
+            }
+        }
+    }
 
     protected onDestroy(): void {
         // 监听匹配回调
         eventTarget.off("match", this.onMatchRoom, this);
     }
 }
-
-

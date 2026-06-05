@@ -124,9 +124,9 @@ export class LoginSceneMgr extends Component {
                         code: res.code,
                         getRegister: true,
                     });
-                    const { openid, isRegister } = response.data;
-
+                    console.log("getUserProfile before ---------- ", response);
                     if (response.code === 200) {
+                        const { openid, isRegister } = response.data;
                         if (isRegister) {
                             let res = await post("/wxLogin", {
                                 openid: openid,
@@ -135,6 +135,8 @@ export class LoginSceneMgr extends Component {
                                 sys.localStorage.setItem('token', res.token);
                                 // 跳转到大厅
                                 director.loadScene('HallScene');
+                            } else {
+                                this.toast(res.message || "登录失败");
                             }
                         } else {
                             // 该微信在数据库中没有查询到
@@ -142,6 +144,7 @@ export class LoginSceneMgr extends Component {
                                 lang: 'zh_CN',
                                 desc: '展示用户信息',
                                 success: async (data) => {
+                                    console.log("getUserProfile ---------- ", data);
                                     let res = await post("/wxLogin", {
                                         openid: openid,
                                         wxUserInfo: data.userInfo
@@ -150,10 +153,18 @@ export class LoginSceneMgr extends Component {
                                         sys.localStorage.setItem('token', res.token);
                                         // 跳转到大厅
                                         director.loadScene('HallScene');
+                                    } else {
+                                        this.toast(res.message || "登录失败");
                                     }
-                                }
+                                },
+                                fail: (err) => {
+                                    console.log("Error: ", err);
+                                    this.toast("微信授权失败");
+                                },
                             })
                         }
+                    } else {
+                        this.toast(response.message || "获取openid失败");
                     }
                 },
                 fail: (err) => {
