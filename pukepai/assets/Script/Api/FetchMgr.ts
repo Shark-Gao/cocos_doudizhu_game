@@ -47,6 +47,7 @@ class CustomFetch {
         let response;
         try {
             if (window.wx) {
+                console.log('fetch url:', this.baseUrl + url);
                 // 发起请求
                 response = await new Promise((resolve, reject) => {
                     wx.request({
@@ -113,6 +114,7 @@ customFetch.addResponseInterceptor(async (response, errMsgTip) => {
     let data: any = {};
     if (window.wx) {
         data = response;
+        console.log("[Debug] wx解析 JSON 成功:", data.code);
     } else {
         try {
             data = await response.json();
