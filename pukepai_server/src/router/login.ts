@@ -33,7 +33,7 @@ export default class Login {
           error: '',
           message: '账号已存在'
         }
-      }
+      } 
 
       // 注册
       const idWithoutDashes = v4().replace(/-/g, '');
