@@ -1,3 +1,7 @@
+/*
+ * @author: sharkgao
+ * @LastEditors: sharkgao
+ */
 import * as Koa from 'koa';
 import { v4 } from 'uuid'
 import { post, validateParams } from '../utils/decors';
@@ -40,6 +44,12 @@ export default class Login {
         message: '注册成功'
       };
     } catch (error) {
+      console.error('[registerUser] err.message:', (error as any).message);
+      console.error('[registerUser] err.position:', (error as any).position);
+      console.error('[registerUser] err.where:', (error as any).where);
+      console.error('[registerUser] err.internalQuery:', (error as any).internalQuery);
+      console.error('[registerUser] full err:', error);
+    
       ctx.body = {
         code: 400,
         error: error,
