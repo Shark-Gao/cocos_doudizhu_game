@@ -3,7 +3,7 @@ import { Card } from './Card';
 import { WebsocketMgr } from '../Api/WebsocketMgr';
 import { eventTarget } from '../../Utils/EventListening';
 import { MyDealCardAmt } from '../UI/MyDealCardAmt';
-import { loadRemoteImg, findChildByNameRecursive, reorderArray, resetAnimationToFirstFrame } from '../../Utils/Tools';
+import { loadRemoteImg, findChildByNameRecursive, reorderArray, resetAnimationToFirstFrame, toRealCard } from '../../Utils/Tools';
 import { LabelEllipsisOptimized } from '../UI/LabelEllipsisOptimized';
 import { RoundBox } from '../UI/RoundBox';
 import { CardBox } from './CardBox';
@@ -16,8 +16,9 @@ import { AudioMgr } from '../AudioMgr';
 import { playAudios, audioPageageName, GameModel } from '../../Utils/constant';
 import { RoomPlayCard } from './RoomPlayCard';
 import Global from '../../Utils/Global';
+import { ShuangjianRoomLifecycle } from '../GameMode/ShuangjianRoomLifecycle';
+import { GameMode } from '../GameMode/IGameModeView';
 const { ccclass, property } = _decorator;
-
 // 渲染卡牌需要参数
 interface renderCardParams {
     [str: string]: {
@@ -62,6 +63,16 @@ export class RoomScene extends Component {
         displayName: "玩家2卡片存放节点"
     })
     user2CardParent: Node = null;
+    @property({
+        type: Node,
+        displayName: "玩家3信息节点（双剑 4 人位顶部坐位，可选）"
+    })
+    user3Info: Node = null;
+    @property({
+        type: Node,
+        displayName: "玩家3卡片存放节点（双剑 4 人位顶部坐位，可选）"
+    })
+    user3CardParent: Node = null;
     @property({
         type: Label,
         displayName: "房间ID"
@@ -111,6 +122,8 @@ export class RoomScene extends Component {
     socketUrl: string = "";
     // 被挤掉线
     replaceLogin: boolean = false;
+    // 双剑 生命周期辅助器（在 game_mode=1 时接管双剑专属 socket 事件）
+    private modeLifecycle: ShuangjianRoomLifecycle | null = null;
 
     start() {
         try {
@@ -121,6 +134,13 @@ export class RoomScene extends Component {
         } catch (error) {
             console.log("获取用户信息失败");
         }
+
+        // 双剑生命周期子载：在可能发出任何 socket 请求之前让双剑 modeView 的
+        // 事件订阅先注册上，避免接收 dealCards 后错过后续双剑事件。
+        // 由于这个阶段 roomInfo 还在 getRoomInfo 后才拿到，我们先传 game_mode
+        // 缺省为未知，让 lifecycle 里部默认走 Doudizhu 分支；拿到房间信息后会
+        // 在 onGetRoomInfo 中重新 attach。
+        this.modeLifecycle = new ShuangjianRoomLifecycle();
 
         // 微信展示分享功能
         if (window.wx) {
@@ -170,12 +190,19 @@ export class RoomScene extends Component {
         eventTarget.on("userlostConnection", this.onUserlostConnection, this);
         // 监听底牌动画播放结束
         this.bottomCardAmtNode.getComponent(Animation).on(Animation.EventType.FINISHED, this.onBottomCardAmt, this)
+        // 监听双剑队友公开
+        eventTarget.on("shuangjian:partnerRevealed", this.onShuangjianPartnerRevealed, this);
     }
 
     update(deltaTime: number) {
 
     }
     protected onDestroy(): void {
+        // 先拆除双剑 modeView 的 socket 订阅，避免身份切换/退出后事件泄露
+        if (this.modeLifecycle) {
+            this.modeLifecycle.detach();
+            this.modeLifecycle = null;
+        }
         eventTarget.off("userJoinRoomUpdate", this.onGetRoomInfo, this);
         eventTarget.off("dealCards", this.onDealCards, this);
         eventTarget.off("ready", this.onReady, this);
@@ -193,6 +220,7 @@ export class RoomScene extends Component {
         eventTarget.off("userlostConnection", this.onUserlostConnection, this);
         eventTarget.off("replaceLogin", this.onReplaceLogin, this);
         eventTarget.off("userConnectionSuccess", this.onUserConnectionSuccess, this);
+        eventTarget.off("shuangjian:partnerRevealed", this.onShuangjianPartnerRevealed, this);
     }
 
     // ui 刘海兼容问题
@@ -267,7 +295,7 @@ export class RoomScene extends Component {
     // 获取节点上绑定的用户信息
     getUserNodeInfo() {
         // 这个数组顺序很重要不能调整，是根据出牌顺序有关系的
-        const UserNodeId = [
+        const UserNodeId: any[] = [
             {
                 node: this.myInfoNode, // 存放我的信息节点（包含用户信息、卡牌信息等）
                 nodeId: this.myInfoNode.getComponent(CardBox).userId, // 节点上绑定的用户id
@@ -280,13 +308,22 @@ export class RoomScene extends Component {
                 cardParentNode: this.user2CardParent,
                 cardNodeName: "rightUser",
             },
-            {
-                node: this.user1Info,
-                nodeId: this.user1Info.getComponent(CardBox).userId,
-                cardParentNode: this.user1CardParent,
-                cardNodeName: "leftUser",
-            },
         ];
+        // 双剑 4 人席：在逆时针顺序中插入对面顶部玩家（我 → 右手 → 对面 → 左手）
+        if (this.user3Info && this.user3CardParent && this.user3Info.activeInHierarchy) {
+            UserNodeId.push({
+                node: this.user3Info,
+                nodeId: this.user3Info.getComponent(CardBox).userId,
+                cardParentNode: this.user3CardParent,
+                cardNodeName: "topUser",
+            });
+        }
+        UserNodeId.push({
+            node: this.user1Info,
+            nodeId: this.user1Info.getComponent(CardBox).userId,
+            cardParentNode: this.user1CardParent,
+            cardNodeName: "leftUser",
+        });
 
         return UserNodeId;
     }
@@ -312,6 +349,13 @@ export class RoomScene extends Component {
             const gameModel = this.node.getChildByName("GameModel");
             gameModel.active = true;
             gameModel.getChildByName("Str").getComponent(Label).string = GameModel[data.room_type];
+            // 先通过玩法多态视图拿到座位布局，再计算用户节点顺序。
+            // RoomScene 不直接判断具体 game_mode，只关心当前玩法需要几个玩家座位。
+            const modeView = this.modeLifecycle?.attach(this.node, data);
+            const seatLayout = modeView?.getSeatLayout(data.special_rules || {});
+            if (this.user3Info) {
+                this.user3Info.active = (seatLayout?.playerCount || 3) >= 4;
+            }
             // 获取节点顺序
             const userNodeId = this.getUserNodeInfo();
             // 倍率
@@ -330,8 +374,11 @@ export class RoomScene extends Component {
                 findChildByNameRecursive(this.myInfoNode, "MingPaiBtn").active = false;
                 findChildByNameRecursive(this.myInfoNode, "Trusteeship").active = false;
                 findChildByNameRecursive(this.myInfoNode, "Regardless").active = false;
-                findChildByNameRecursive(this.user1Info, "Ready").active = false;
-                findChildByNameRecursive(this.user2Info, "Ready").active = false;
+                userNodeId.forEach(({ node, cardNodeName }) => {
+                    if (cardNodeName !== "my") {
+                        findChildByNameRecursive(node, "Ready").active = false;
+                    }
+                });
                 findChildByNameRecursive(this.node, "PlayAnotherRound").active = false;
 
                 userNodeId.forEach(({ nodeId, node }) => {
@@ -372,15 +419,16 @@ export class RoomScene extends Component {
 
             // 渲染用户信息
             sortList.forEach((userId, index) => {
-                if (userId) {
-                    // 获取当前用户信息
-                    const myUserInfo = this.roomInfo.roomUsers[userId];
-                    if (myUserInfo) {
-                        // 渲染用户信息
-                        this.renderUserInfo(userNodeId[index].node, myUserInfo);
-                    }
+                const userNodeInfo = userNodeId[index];
+                if (!userId || !userNodeInfo?.node) return;
+                // 获取当前用户信息
+                const myUserInfo = this.roomInfo.roomUsers[userId];
+                if (myUserInfo) {
+                    // 渲染用户信息
+                    this.renderUserInfo(userNodeInfo.node, myUserInfo);
                 }
             })
+            this.refreshShuangjianTeammateLabels();
 
             // 抢地主状态，还没有产生地主 
             if (data.gameStatus == GameStatus.SNATCHLABDLORD && !data.landlord_id) {
@@ -388,8 +436,8 @@ export class RoomScene extends Component {
                 // 渲染抢地主UI
                 data.snatch_landlord_record.forEach(({ userId, isSnatchLandlord }) => {
                     sortList.forEach((sortUserId, index) => {
-                        const userNode = userNodeId[index].node;
-                        if (userId == sortUserId) {
+                        const userNode = userNodeId[index]?.node;
+                        if (userNode && userId == sortUserId) {
                             findChildByNameRecursive(userNode, isSnatchLandlord ? "QiangDIZhuRes" : "BuQiangRes").active = true;
                         }
                     })
@@ -399,8 +447,8 @@ export class RoomScene extends Component {
                 data.roomUserIdList.forEach((userId) => {
                     const userItemInfo = data.roomUsers[userId];
                     sortList.forEach((sortUserId, index) => {
-                        const userNode = userNodeId[index].node;
-                        if (userId == sortUserId) {
+                        const userNode = userNodeId[index]?.node;
+                        if (userNode && userId == sortUserId) {
                             if (userItemInfo.redouble_status == 1) {
                                 findChildByNameRecursive(userNode, "NoDoubleRes").active = true;
                             } else if (userItemInfo.redouble_status == 2) {
@@ -420,8 +468,11 @@ export class RoomScene extends Component {
             if (this.roomInfo.gameStatus != GameStatus.NOSTART) {
                 // 渲染卡牌信息
                 this.renderCard(this.roomInfo.roomUsers);
-                // 判断是否有底牌（发过牌就有底牌了）
-                if (this.roomInfo.bottom_card.length > 0) {
+                // 双剑没有斗地主底牌展示，顶部底牌只在斗地主玩法显示。
+                if (this.roomInfo.game_mode === GameMode.SHUANGJIAN) {
+                    this.bottomCardParent.active = false;
+                    this.bottomCardAmtNode.active = false;
+                } else if (this.roomInfo.bottom_card.length > 0) {
                     // 判断底牌是否明牌（有地主正面已经明牌了）
                     if (this.roomInfo.landlord_id) {
                         this.renderBottomCard(this.roomInfo.landlord_id, this.roomInfo.bottom_card, true);
@@ -436,12 +487,33 @@ export class RoomScene extends Component {
 
             // 渲染已出卡牌
             this.renderPlayCard(this.roomInfo);
+            // 恢复当前出牌回合的倒计时和操作按钮
+            this.restorePlayCardTurn(this.roomInfo);
         } else if (code == 400) {
             // 关闭连接，退出房间
             WebsocketMgr.close(1000);
             // 房间不存在退出房间
             director.loadScene('HallScene');
         }
+    }
+
+    // 恢复当前出牌回合的倒计时和操作按钮（断线重连/中途进房）
+    private restorePlayCardTurn(roomInfo) {
+        if (!roomInfo?.current_play_card_user || roomInfo.gameStatus == GameStatus.NOSTART) return;
+        const downTime = Number(roomInfo.play_card_countDown);
+        if (Number.isNaN(downTime) || downTime <= 0) return;
+
+        const lastRecord = this.getLastRecord();
+        const isFreePlayUser = roomInfo.shuangjian_free_play_user && roomInfo.shuangjian_free_play_user === roomInfo.current_play_card_user;
+        eventTarget.emit("playCardTimer", {
+            code: 200,
+            data: {
+                userId: roomInfo.current_play_card_user,
+                downTime,
+                isYaPai: isFreePlayUser ? false : ((!lastRecord?.userId || lastRecord?.userId == roomInfo.current_play_card_user) ? false : true),
+                userCard: roomInfo.roomUsers?.[this.userInfo.user_id]?.user_card || [],
+            }
+        });
     }
 
     // 渲染已出卡牌
@@ -468,18 +540,16 @@ export class RoomScene extends Component {
                         // 反向下标
                         const reverseIndex = (temp.length - 1 - index);
 
-                        cardItem.getComponent(CardItem).cardType = Math.ceil(Number(cardNum) / 13) - 1;
-                        cardItem.getComponent(CardItem).cardNum = Number(cardNum) % 13 == 0 ? 13 : Number(cardNum) % 13;
+                        cardItem.getComponent(CardItem).cardType = Math.ceil(toRealCard(cardNum) / 13) - 1;
+                        cardItem.getComponent(CardItem).cardNum = toRealCard(cardNum) % 13 == 0 ? 13 : toRealCard(cardNum) % 13;
                         cardItem.getComponent(CardItem).mingpai = true;
                         cardItem.getComponent(UITransform).setContentSize(70, 96);
                         cardItem.active = true;
-                        // 左边和右边渲染不一样
-                        if (cardNodeName == "leftUser") {
-                            cardItem.getComponent(Widget).left = index * 25;
-                        } else if (cardNodeName == "rightUser") {
+                        // 右侧玩家需要反向排列；左侧和顶部玩家从父节点 0 坐标开始向右排列。
+                        if (cardNodeName == "rightUser") {
                             cardItem.getComponent(Widget).left = -(reverseIndex * 25);
                         } else {
-                            cardItem.getComponent(Widget).left = startLeftst + 25 * index;
+                            cardItem.getComponent(Widget).left = index * 25;
                         }
 
                         findChildByNameRecursive(node, "PlayCardBox").addChild(cardItem);
@@ -507,6 +577,8 @@ export class RoomScene extends Component {
     renderUserInfo(userInfoNode: Node, userInfo, active = true) {
         // 节点上绑定上用户ID，方便区分
         userInfoNode.getComponent(CardBox).userId = userInfo.user_id || "";
+        const teammateLabel = findChildByNameRecursive(userInfoNode, "teammate");
+        if (teammateLabel) teammateLabel.active = false;
         // 判断加载默认本地头像
         if (userInfo.user_head_img == "/Image/default_head.png") {
             // 加载本地资源要写上 spriteFrame 图片类型
@@ -641,6 +713,7 @@ export class RoomScene extends Component {
             // 隐藏地主图标
             findChildByNameRecursive(node, "Dizhu").active = false;
         })
+        this.clearShuangjianTeammateState();
         // 准备
         this.ready();
     }
@@ -651,13 +724,17 @@ export class RoomScene extends Component {
             const userNodeId = this.getUserNodeInfo();
             // 发牌清空出牌记录
             this.updataRoomInfoPlayCardRecord([]);
+            this.clearShuangjianTeammateState();
             // 隐藏底牌节点
             this.bottomCardParent.active = false;
             // 隐藏所有玩家的准备UI
             findChildByNameRecursive(this.myInfoNode, "ReadyBtn").active = false;
             findChildByNameRecursive(this.myInfoNode, "UnReadyBtn").active = false;
-            findChildByNameRecursive(this.user1Info, "Ready").active = false;
-            findChildByNameRecursive(this.user2Info, "Ready").active = false;
+            userNodeId.forEach(({ node, cardNodeName }) => {
+                if (cardNodeName !== "my") {
+                    findChildByNameRecursive(node, "Ready").active = false;
+                }
+            });
             // 展示名牌按钮，在发牌的期间可以选择名牌，发牌动画结束后不能明牌了
             findChildByNameRecursive(this.myInfoNode, "MingPaiBtn").active = true;
             // 隐藏抢地主按钮
@@ -680,10 +757,15 @@ export class RoomScene extends Component {
 
             // 渲染卡牌信息
             this.renderCard(data, true);
-            // 重置底牌动画到第一帧，为了重新播放
-            resetAnimationToFirstFrame(this.bottomCardAmtNode.getComponent(Animation));
-            // 展示底牌动画节点
-            this.bottomCardAmtNode.active = true;
+            if (this.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+                this.bottomCardParent.active = false;
+                this.bottomCardAmtNode.active = false;
+            } else {
+                // 重置底牌动画到第一帧，为了重新播放
+                resetAnimationToFirstFrame(this.bottomCardAmtNode.getComponent(Animation));
+                // 展示底牌动画节点
+                this.bottomCardAmtNode.active = true;
+            }
             // 执行我的卡片动画
             this.myDealCardAnimation.getComponent(MyDealCardAmt).dealCardAnimation();
         }
@@ -809,14 +891,12 @@ export class RoomScene extends Component {
     onSnatchLandlordEnd({ data, code }) {
         if (code == 200) {
             const userNodeId = this.getUserNodeInfo();
-            // 隐藏所有玩家抢地主样式
+            // 隐藏所有玩家抢地主样式和倒计时
             userNodeId.forEach(({ nodeId, node }) => {
                 findChildByNameRecursive(node, "QiangDIZhuRes").active = false;
                 findChildByNameRecursive(node, "BuQiangRes").active = false;
+                findChildByNameRecursive(node, "TimeDown").active = false;
             })
-            // 隐藏其他玩家的倒计时
-            findChildByNameRecursive(this.user1Info, "TimeDown").active = false;
-            findChildByNameRecursive(this.user2Info, "TimeDown").active = false;
             // 渲染底牌
             this.renderBottomCard(data.userId, data.bottomCard, true);
             // 更新地主卡牌
@@ -826,6 +906,11 @@ export class RoomScene extends Component {
 
     // 渲染底牌
     renderBottomCard(userId, bottomCard, mingpai) {
+        if (this.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+            this.bottomCardParent.active = false;
+            this.bottomCardAmtNode.active = false;
+            return;
+        }
         this.bottomCardParent.active = true;
         // 用户头像地主icon展示
         const userNodeId = this.getUserNodeInfo();
@@ -841,8 +926,8 @@ export class RoomScene extends Component {
         this.bottomCardParent.children.forEach((element, index) => {
             const cardItemJs = element.getComponent(CardItem);
             const cardNum = bottomCard[index];
-            cardItemJs.cardNum = Number(cardNum) % 13 == 0 ? 13 : Number(cardNum) % 13;
-            cardItemJs.cardType = Math.ceil(Number(cardNum) / 13) - 1;
+            cardItemJs.cardNum = toRealCard(cardNum) % 13 == 0 ? 13 : toRealCard(cardNum) % 13;
+            cardItemJs.cardType = Math.ceil(toRealCard(cardNum) / 13) - 1;
             cardItemJs.mingpai = mingpai;
             cardItemJs.init();
         });
@@ -851,7 +936,12 @@ export class RoomScene extends Component {
     // 监听发牌动画结束, 执行底牌动画
     onDealCardsAmt() {
         console.log("动画结束隐藏明牌");
-        this.bottomCardAmtNode.getComponent(Animation).play(); // play 不传参数播放默认动画
+        if (this.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+            this.bottomCardParent.active = false;
+            this.bottomCardAmtNode.active = false;
+        } else {
+            this.bottomCardAmtNode.getComponent(Animation).play(); // play 不传参数播放默认动画
+        }
         // 发牌结束隐藏明牌按钮
         findChildByNameRecursive(this.myInfoNode, "MingPaiBtn").active = false;
         // 初始化选择卡牌方法
@@ -862,6 +952,11 @@ export class RoomScene extends Component {
 
     // 底牌动画播放结束
     onBottomCardAmt() {
+        if (this.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+            this.bottomCardParent.active = false;
+            this.bottomCardAmtNode.active = false;
+            return;
+        }
         this.bottomCardParent.active = true;
         this.bottomCardAmtNode.active = false;
     }
@@ -877,18 +972,69 @@ export class RoomScene extends Component {
         });
     }
 
+    private onShuangjianPartnerRevealed(payload: any): void {
+        const data = payload?.data || payload;
+        if (!data || this.roomInfo?.game_mode !== GameMode.SHUANGJIAN) return;
+        this.roomInfo.partner_revealed = true;
+        this.roomInfo.landlord_camp = data.landlordCamp || data.landlord_camp || this.roomInfo.landlord_camp || [];
+        this.roomInfo.farmer_camp = data.farmerCamp || data.farmer_camp || this.roomInfo.farmer_camp || [];
+        this.refreshShuangjianTeammateLabels();
+    }
+
+    private clearShuangjianTeammateState(): void {
+        if (this.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+            this.roomInfo.partner_revealed = false;
+            this.roomInfo.landlord_camp = [];
+            this.roomInfo.farmer_camp = [];
+        }
+        this.refreshShuangjianTeammateLabels();
+    }
+
+    private refreshShuangjianTeammateLabels(): void {
+        const userNodeId = this.getUserNodeInfo();
+        if (this.roomInfo?.game_mode !== GameMode.SHUANGJIAN) {
+            userNodeId.forEach(({ node }) => {
+                const teammateLabel = findChildByNameRecursive(node, "teammate");
+                if (teammateLabel) teammateLabel.active = false;
+            });
+            return;
+        }
+
+        const landlordCamp = this.roomInfo.landlord_camp || [];
+        const farmerCamp = this.roomInfo.farmer_camp || [];
+        const myUserId = String(this.userInfo.user_id || "");
+        const myCamp = landlordCamp.indexOf(myUserId) >= 0 ? landlordCamp : (farmerCamp.indexOf(myUserId) >= 0 ? farmerCamp : []);
+
+        userNodeId.forEach(({ nodeId, node }) => {
+            const teammateLabel = findChildByNameRecursive(node, "teammate");
+            if (!teammateLabel) return;
+            const userId = String(nodeId || "");
+            teammateLabel.active = !!userId && userId !== myUserId && myCamp.indexOf(userId) >= 0;
+        });
+    }
+
     // 监听明牌
     onMingpai({ data, code }) {
         if (code == 200) {
-            // 设置玩家状态为明牌
-            this.roomInfo.roomUsers[data.userId].mingpai = true;
+            const revealUsers = data.roomUsers || data.roomUser || {};
+            Object.keys(revealUsers).forEach(userId => {
+                if (this.roomInfo.roomUsers[userId]) {
+                    this.roomInfo.roomUsers[userId] = {
+                        ...this.roomInfo.roomUsers[userId],
+                        ...revealUsers[userId],
+                        mingpai: true,
+                    };
+                }
+            });
+            if (this.roomInfo.roomUsers[data.userId]) {
+                this.roomInfo.roomUsers[data.userId].mingpai = true;
+            }
             // 该玩家提交的明牌请求成功，隐藏明牌按钮
             if (data.userId == this.userInfo.user_id) {
                 findChildByNameRecursive(this.myInfoNode, "MingPaiBtn").active = false;
-            } else { // 其他玩家明牌，重新渲染他们的卡牌
-                // 渲染明牌用户的卡牌 roomUser 只包含明牌用户的信息
-                this.renderCard(data.roomUser)
             }
+            // 明牌后重新渲染服务端下发的玩家手牌；roomUsers 为全员，roomUser 兼容旧的单人数据。
+            this.renderCard(revealUsers);
             // 明牌音频
             AudioMgr.inst.playOneShot(playAudios[audioPageageName]["mingpai"]);
         }

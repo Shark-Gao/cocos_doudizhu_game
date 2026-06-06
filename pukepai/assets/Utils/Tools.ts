@@ -3,6 +3,22 @@ import { RoundBox } from '../Script/UI/RoundBox';
 import { AudioType } from './constant';
 import CardLogic from './cardLogic';
 
+/**
+ * Collapse a card id so the same logic works for both Doudizhu (1..54) and
+ * Shuangjian (which uses 1..54 for deck-1 and 101..154 for deck-2). The
+ * second deck's id maps onto the same visible card as `id - 100`.
+ *
+ *   toRealCard(40)  === 40
+ *   toRealCard(140) === 40
+ *
+ * Pure helper — safe to call on any client-side card-rendering path.
+ */
+export function toRealCard(id: any): number {
+  const n = Number(id);
+  if (!Number.isFinite(n)) return 0;
+  return n > 100 ? n - 100 : n;
+}
+
 // 加载远程头像
 export const loadRemoteImg = (url: string, node: Node, ext = ".jpg") => {
   assetManager.loadRemote<ImageAsset>(url, { ext: ext }, (err, imageAsset) => {
@@ -246,33 +262,37 @@ export function timestampToDateTime(timestamp) {
 // 出牌类型判断，转音频名称
 export function playCardAudio(cards) {
   if (cards?.length <= 0) return;
+  const realCards = cards.map(card => toRealCard(card));
+  const cardType = CardLogic.judgeCardType(realCards);
+  if (!cardType?.name) return;
+
   // AudioType
-  if (CardLogic.judgeCardType(cards).name == "One") {
-    if (cards[0] == 53) {
+  if (cardType.name == "One") {
+    if (realCards[0] == 53) {
       return AudioType.xiaowang;
-    } else if (cards[0] == 54) {
+    } else if (realCards[0] == 54) {
       return AudioType.dawang;
     }
-    const cardNum = Number(cards[0]) % 13 == 0 ? 13 : Number(cards[0]) % 13
+    const cardNum = Number(realCards[0]) % 13 == 0 ? 13 : Number(realCards[0]) % 13
     return AudioType[`one_${cardNum}`];
-  } else if (CardLogic.judgeCardType(cards).name == "Double") {
-    const cardNum = Number(cards[0]) % 13 == 0 ? 13 : Number(cards[0]) % 13;
+  } else if (cardType.name == "Double") {
+    const cardNum = Number(realCards[0]) % 13 == 0 ? 13 : Number(realCards[0]) % 13;
     return AudioType[`duizi_${cardNum}`];
-  } else if (CardLogic.judgeCardType(cards).name == "Three") {
+  } else if (cardType.name == "Three") {
     return AudioType.sanzhang;
-  } else if (CardLogic.judgeCardType(cards).name == "ThreeWithOne") {
+  } else if (cardType.name == "ThreeWithOne") {
     return AudioType.dai_3_1;
-  } else if (CardLogic.judgeCardType(cards).name == "ThreeWithTwo") {
+  } else if (cardType.name == "ThreeWithTwo") {
     return AudioType.dai_3_2;
-  } else if (CardLogic.judgeCardType(cards).name == "Plane") {
+  } else if (cardType.name == "Plane") {
     return AudioType.feiji;
-  } else if (CardLogic.judgeCardType(cards).name == "Scroll") {
+  } else if (cardType.name == "Scroll") {
     return AudioType.shunzi;
-  } else if (CardLogic.judgeCardType(cards).name == "DoubleScroll") {
+  } else if (cardType.name == "DoubleScroll") {
     return AudioType.liandui;
-  } else if (CardLogic.judgeCardType(cards).name == "Boom") {
+  } else if (cardType.name == "Boom") {
     return AudioType.zhadan;
-  } else if (CardLogic.judgeCardType(cards).name == "kingboom") {
+  } else if (cardType.name == "kingboom") {
     return AudioType.wangzha;
   }
 }

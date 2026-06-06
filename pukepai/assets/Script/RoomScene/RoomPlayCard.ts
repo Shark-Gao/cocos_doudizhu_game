@@ -1,7 +1,7 @@
 import { _decorator, Button, Color, Component, instantiate, Label, Node, Prefab, Sprite, sys, tween, UITransform, Vec3, Widget, director, AudioClip } from 'cc';
 import { WebsocketMgr } from '../Api/WebsocketMgr';
 import { eventTarget } from '../../Utils/EventListening';
-import { findChildByNameRecursive, playCardAudio } from '../../Utils/Tools';
+import { findChildByNameRecursive, playCardAudio, toRealCard } from '../../Utils/Tools';
 import { RoomScene } from './RoomScene';
 import { CardItem } from './CardItem';
 import { Card } from './Card';
@@ -11,8 +11,9 @@ import CardHint from '../../Utils/cardHint';
 import { GameOver } from './GameOver';
 import { AudioMgr } from '../AudioMgr';
 import { playAudios, audioPageageName } from '../../Utils/constant';
+import { GameMode } from '../GameMode/IGameModeView';
+import { cardHintShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
 const { ccclass, property } = _decorator;
-
 @ccclass('RoomPlayCard')
 export class RoomPlayCard extends Component {
 
@@ -83,6 +84,8 @@ export class RoomPlayCard extends Component {
         eventTarget.on("userPlayCard", this.onUserPlayCard, this);
         // 被挤掉线
         eventTarget.on("replaceLogin", this.onReplaceLogin, this);
+        // 双剑专属：结算推送
+        eventTarget.on("shuangjianGameOver", this.onShuangjianGameOver, this);
 
         // 测试提示方法
         // console.log("提示出牌", CardHint.cardHint([], [17, 17, 17, 4, 5, 6, 7, 8, 54]))
@@ -92,11 +95,31 @@ export class RoomPlayCard extends Component {
         eventTarget.off("playCardTimer", this.onPlayCardTimer, this);
         eventTarget.off("cancelTrusteeship", this.onCancelTrusteeship, this);
         eventTarget.off("robotPlay", this.onRobotPlay, this);
+        eventTarget.off("userPlayCard", this.onUserPlayCard, this);
         eventTarget.off("replaceLogin", this.onReplaceLogin, this);
+        eventTarget.off("shuangjianGameOver", this.onShuangjianGameOver, this);
     }
 
     update(deltaTime: number) {
 
+    }
+
+    private getHintCards(targetCards: number[] = [], myCards: number[] = []) {
+        try {
+            const safeTargetCards = targetCards || [];
+            const safeMyCards = myCards || [];
+            if (safeTargetCards.length <= 0) {
+                return safeMyCards.length > 0 ? [[safeMyCards[0]]] : [];
+            }
+            if (this.roomScene?.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+                const hint = cardHintShuangjian(safeTargetCards, safeMyCards);
+                return hint?.length > 0 ? [hint] : [];
+            }
+            return CardHint.cardHint(safeTargetCards, safeMyCards) || [];
+        } catch (error) {
+            console.log("获取提示牌失败", error);
+            return [];
+        }
     }
 
     // 监听被挤掉线
@@ -130,38 +153,40 @@ export class RoomPlayCard extends Component {
                     // 判断当前出牌用户是否是自己
                     if (data.userId == this.userInfo.user_id) {
                         console.log("展示出牌按钮", data.isYaPai, this.firstGetPlayCardTimeDown)
+                        const PlayHandBtn = findChildByNameRecursive(node, "PlayHandBtn");
+                        const noPlayBtn = findChildByNameRecursive(node, "btn_buchu");
+                        const hintBtn = findChildByNameRecursive(node, "btn_tisji");
+                        const myCardSelection = this.myCardParentNode.getComponent(CardSelection);
+                        myCardSelection.setCurrentTurnIsYaPai(!!data.isYaPai);
+
+                        // 自己回合每次倒计时都恢复操作区，避免房间信息刷新或其他逻辑隐藏按钮后只剩倒计时。
+                        if (PlayHandBtn) {
+                            PlayHandBtn.active = true;
+                        }
+                        if (hintBtn) {
+                            hintBtn.active = true;
+                        }
+                        if (noPlayBtn) {
+                            noPlayBtn.active = !!data.isYaPai;
+                        }
+                        findChildByNameRecursive(this.myInfoNode, "Regardless").active = false;
+                        if (PlayHandBtn) {
+                            PlayHandBtn.getComponent(Widget).horizontalCenter = data.isYaPai ? 0 : -57.5;
+                        }
 
                         // 第一次获取出牌倒计时
                         if (this.firstGetPlayCardTimeDown) {
                             // 提示出牌次数重置
                             this.hintCardNum = 0;
-                            const PlayHandBtn = findChildByNameRecursive(node, "PlayHandBtn");
-                            // 是否压牌（压排的话展示不出按钮，不是的话不展示不出按钮和提示按钮）
-                            if (data.isYaPai) {
-                                findChildByNameRecursive(node, "btn_buchu").active = true;
-                                findChildByNameRecursive(node, "btn_tisji").active = true;
-                                // this.scheduleOnce(() => {
-                                PlayHandBtn.getComponent(Widget).horizontalCenter = 0;
-                                // }, 0)
-                                console.log("压牌")
-                            } else {
-                                findChildByNameRecursive(node, "btn_buchu").active = false;
-                                findChildByNameRecursive(node, "btn_tisji").active = false;
-                                // this.scheduleOnce(() => {
-                                PlayHandBtn.getComponent(Widget).horizontalCenter = -115;
-                                // }, 0)
-                                console.log("不压牌")
-                            }
-
-                            // 展示按钮
-                            PlayHandBtn.active = true;
+                            console.log(data.isYaPai ? "压牌" : "不压牌")
 
                             // 第一次获取到出牌倒计时，判断是否默认禁用出牌按钮，没有选择卡牌&&选择卡牌小于上一个玩家出的牌，禁用按钮
-                            this.myCardParentNode.getComponent(CardSelection).updatePlayCardBtnStyle();
+                            myCardSelection.updatePlayCardBtnStyle();
 
-                            // 默认获取一次提示，如果管不上就展示要不起遮罩
-                            const hintCardList = CardHint.cardHint(lastRecord.playCard, this.myCardParentNode.getComponent(Card).cardList || []);
-                            if (hintCardList.length <= 0 && data.isYaPai) {
+                            // 默认获取一次提示，如果管不上就展示要不起遮罩。
+                            // 双剑提示算法只用于辅助选牌，不覆盖全部可压牌型，不能用提示为空来阻挡手动选牌。
+                            const hintCardList = this.getHintCards(data.isYaPai ? (lastRecord?.playCard || []) : [], this.myCardParentNode.getComponent(Card).cardList || []);
+                            if (hintCardList.length <= 0 && data.isYaPai && this.roomScene?.roomInfo?.game_mode !== GameMode.SHUANGJIAN) {
                                 findChildByNameRecursive(this.myInfoNode, "Regardless").active = true;
                             }
 
@@ -212,8 +237,9 @@ export class RoomPlayCard extends Component {
             // 获取要出的卡牌节点
             this.myCardParentNode.children.forEach((card, index) => {
                 const cardItem = card.getComponent(CardItem)
+                const cardIndex = cardItem.cardIndex || (cardItem.cardNum + cardItem.cardType * 13);
                 // 获取卡牌
-                if (playCard.indexOf(cardItem.cardNum + cardItem.cardType * 13) != -1) {
+                if (playCard.indexOf(cardIndex) != -1) {
                     playCardNode.push(card)
                 }
             })
@@ -245,6 +271,7 @@ export class RoomPlayCard extends Component {
 
                 // 复制一份用户出的卡牌，到playCardBox节点下，然后动画结束，删除掉用户卡牌中已出卡牌
                 const cardItem = instantiate(this.cardItem);
+                cardItem.getComponent(CardItem).cardIndex = card.getComponent(CardItem).cardIndex;
                 cardItem.getComponent(CardItem).cardType = card.getComponent(CardItem).cardType;
                 cardItem.getComponent(CardItem).cardNum = card.getComponent(CardItem).cardNum;
                 cardItem.getComponent(CardItem).mingpai = true;
@@ -295,7 +322,8 @@ export class RoomPlayCard extends Component {
                     if (this.roomScene.roomInfo.roomUsers[nodeId].mingpai) { // 明牌删除对应卡牌，并出牌
                         cardParentNode.children.forEach((card, index) => {
                             const cardItem = card.getComponent(CardItem)
-                            if (playCard.indexOf(cardItem.cardNum + cardItem.cardType * 13) != -1) {
+                            const cardIndex = cardItem.cardIndex || (cardItem.cardNum + cardItem.cardType * 13);
+                            if (playCard.indexOf(cardIndex) != -1) {
                                 card.destroy();
                             }
                         })
@@ -319,18 +347,20 @@ export class RoomPlayCard extends Component {
                     // 出牌
                     playCard.forEach((cardNum, index, temp) => {
                         const cardItem = instantiate(this.cardItem);
+                        const realCardNum = toRealCard(cardNum);
+                        cardItem.getComponent(CardItem).cardIndex = cardNum;
                         // 反向下标
                         const reverseIndex = (temp.length - 1 - index);
 
-                        // 左边和右边渲染不一样
-                        if (cardNodeName == "leftUser") {
-                            cardItem.getComponent(Widget).left = index * 25;
-                            cardItem.getComponent(CardItem).cardType = Math.ceil(Number(cardNum) / 13) - 1;
-                            cardItem.getComponent(CardItem).cardNum = Number(cardNum) % 13 == 0 ? 13 : Number(cardNum) % 13;
-                        } else {
+                        // 右侧玩家需要反向排列；左侧和顶部玩家从父节点 0 坐标开始向右排列。
+                        if (cardNodeName == "rightUser") {
                             cardItem.getComponent(Widget).left = -(reverseIndex * 25);
-                            cardItem.getComponent(CardItem).cardType = Math.ceil(Number(cardNum) / 13) - 1;
-                            cardItem.getComponent(CardItem).cardNum = Number(cardNum) % 13 == 0 ? 13 : Number(cardNum) % 13;
+                            cardItem.getComponent(CardItem).cardType = Math.ceil(realCardNum / 13) - 1;
+                            cardItem.getComponent(CardItem).cardNum = realCardNum % 13 == 0 ? 13 : realCardNum % 13;
+                        } else {
+                            cardItem.getComponent(Widget).left = index * 25;
+                            cardItem.getComponent(CardItem).cardType = Math.ceil(realCardNum / 13) - 1;
+                            cardItem.getComponent(CardItem).cardNum = realCardNum % 13 == 0 ? 13 : realCardNum % 13;
                         }
                         cardItem.getComponent(CardItem).mingpai = true;
                         cardItem.getComponent(UITransform).setContentSize(70, 96);
@@ -400,27 +430,26 @@ export class RoomPlayCard extends Component {
     cardHint() {
         // 查询最近一条的出牌记录
         const lastRecord = this.roomScene.getLastRecord();
-        // 最后一次出牌的记录如果是我的话，就不是压别人的牌，而是出牌
-        const isYaPai = (!lastRecord?.userId || lastRecord?.userId == this.userInfo.user_id) ? false : true;
-        // 压牌提示出牌，不是压牌不提示（内容太多，没想好怎么处理）
-        if (isYaPai) {
-            // 获取提示卡牌
-            const hintCardList = CardHint.cardHint(lastRecord.playCard, this.myCardParentNode.getComponent(Card).cardList || []);
-            console.log("提示卡牌为", hintCardList)
-            console.log("获取当前玩家卡牌信息", this.myCardParentNode.getComponent(Card).cardList);
-            // 判断是否有提示卡牌（是否能管的上）
-            if (hintCardList.length > 0) {
-                // 判断提示的卡牌，是否已经提示一圈了，如果已经提示过，则从0开始提示
-                if (this.hintCardNum > hintCardList.length - 1) {
-                    this.hintCardNum = 0;
-                }
-                // 提示卡牌
-                this.myCardParentNode.getComponent(CardSelection).hintSelectCard(hintCardList[hintCardList.length - 1 - this.hintCardNum]);
-                // 提示次数加1
-                this.hintCardNum++;
+        const myCardSelection = this.myCardParentNode.getComponent(CardSelection);
+        const currentTurnIsYaPai = myCardSelection.getCurrentTurnIsYaPai();
+        // 优先使用服务端当前回合下发的压牌状态，避免已出完玩家最后一手旧牌继续作为提示目标。
+        const isYaPai = currentTurnIsYaPai !== null
+            ? currentTurnIsYaPai
+            : ((!lastRecord?.userId || lastRecord?.userId == this.userInfo.user_id) ? false : true);
+        // 获取提示卡牌
+        const hintCardList = this.getHintCards(isYaPai ? (lastRecord?.playCard || []) : [], this.myCardParentNode.getComponent(Card).cardList || []);
+        console.log("提示卡牌为", hintCardList)
+        console.log("获取当前玩家卡牌信息", this.myCardParentNode.getComponent(Card).cardList);
+        // 判断是否有提示卡牌（是否能管的上）
+        if (hintCardList.length > 0) {
+            // 判断提示的卡牌，是否已经提示一圈了，如果已经提示过，则从0开始提示
+            if (this.hintCardNum > hintCardList.length - 1) {
+                this.hintCardNum = 0;
             }
-        } else {
-            return []
+            // 提示卡牌
+            this.myCardParentNode.getComponent(CardSelection).hintSelectCard(hintCardList[hintCardList.length - 1 - this.hintCardNum]);
+            // 提示次数加1
+            this.hintCardNum++;
         }
     }
 
@@ -452,12 +481,16 @@ export class RoomPlayCard extends Component {
                 // 出牌音频名称;
                 const playCardAudioName = playCardAudio(data.playCard);
                 // 播放音频
-                AudioMgr.inst.playOneShot(playAudios[audioPageageName][playCardAudioName]);
+                const audioUrl = playAudios[audioPageageName][playCardAudioName];
+                if (audioUrl) {
+                    AudioMgr.inst.playOneShot(audioUrl);
+                }
             }
             // }
 
             // 当前登录玩家机器人出牌后，重置第一次获取出牌倒计时状态，下次轮到自己出牌时，更新出牌按钮状态
             if (this.userInfo.user_id == data.userId) {
+                this.myCardParentNode.getComponent(CardSelection).setCurrentTurnIsYaPai(null);
                 this.firstGetPlayCardTimeDown = true;
             }
 
@@ -480,8 +513,10 @@ export class RoomPlayCard extends Component {
             if (data.playCard?.length <= 0) {
                 userNodeId.forEach(({ nodeId, node }) => {
                     if (nodeId == data.userId) {
+                        const playCardBox = node.getChildByName("PlayCardBox");
+                        playCardBox.removeAllChildren();
                         // 展示不要图片
-                        node.getChildByName("PlayCardBox").addChild(instantiate(this.noPlayCards));
+                        playCardBox.addChild(instantiate(this.noPlayCards));
                     }
                 });
                 AudioMgr.inst.playOneShot(playAudios[audioPageageName]["buyao"]);
@@ -500,6 +535,7 @@ export class RoomPlayCard extends Component {
                 findChildByNameRecursive(this.myInfoNode, "PlayHandBtn").active = false;
                 // 隐藏倒计时
                 findChildByNameRecursive(this.myInfoNode, "TimeDown").active = false;
+                this.myCardParentNode.getComponent(CardSelection).setCurrentTurnIsYaPai(null);
                 // 重置首次获取出牌倒计时，下次轮到自己出牌时，更新出牌按钮状态
                 this.firstGetPlayCardTimeDown = true;
             }
@@ -509,6 +545,31 @@ export class RoomPlayCard extends Component {
                 this.gameOver(data)
             }
         }
+    }
+
+    /**
+     * 双剑专属结算回调。把服务端推过来的 settlement 列表对齐成现有 GameOver
+     * 弹窗能识别的 gameOverData 数组（按胜利方在前），再复用 gameOver 流程。
+     * 当前 GameOver UI 仅有 3 个槽位 (User1/2/3)；4 人模式下第 4 个玩家的
+     * 数据会在控制台打印出来，待后续完善 4 人结算面板时再渲染。
+     */
+    onShuangjianGameOver({ data, code }) {
+        if (code !== 200) return;
+        const winners = (data?.winners || []).slice();
+        const losers = (data?.losers || []).slice();
+        const gameOverData = [...winners, ...losers];
+        const myIsWinner = winners.some(w => w.user_id === this.userInfo.user_id);
+        const victoryStatus = myIsWinner ? 1 : 2;
+        if (gameOverData.length > 3) {
+            console.log('[Shuangjian] gameOver 4-player extras (UI not yet rendered):', gameOverData[3]);
+        }
+        // Reuse the existing 3-slot GameOver popup. roomUsers is shaped the
+        // same as Doudizhu so the post-game card-flip animation still runs.
+        this.gameOver({
+            gameOverData,
+            roomUsers: data?.roomUsers || {},
+            victoryStatus,
+        });
     }
 
 
@@ -555,8 +616,8 @@ export class RoomPlayCard extends Component {
                         return
                     }
                     this.scheduleOnce(() => {
-                        card.getComponent(CardItem).cardNum = Number(cardNum) % 13 == 0 ? 13 : Number(cardNum) % 13;
-                        card.getComponent(CardItem).cardType = Math.ceil(Number(cardNum) / 13) - 1;
+                        card.getComponent(CardItem).cardNum = toRealCard(cardNum) % 13 == 0 ? 13 : toRealCard(cardNum) % 13;
+                        card.getComponent(CardItem).cardType = Math.ceil(toRealCard(cardNum) / 13) - 1;
                         card.getComponent(CardItem).mingpai = true;
                         card.getComponent(CardItem).init();
 

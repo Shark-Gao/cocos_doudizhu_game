@@ -5,6 +5,7 @@
   "compilerOptions": {
     "strict": false,
     "target": "es2017", // 编译之后的js语法等级      
+    "ignoreDeprecations": "5.0",
     "lib": [
       "ES2017",
       "dom"

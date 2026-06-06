@@ -1,0 +1,179 @@
+{
+    "folders": [
+        {
+            "name": "🎮 客户端 (pukepai)",
+            "path": "pukepai"
+        },
+        {
+            "name": "🖥️ 服务端 (pukepai_server)",
+            "path": "pukepai_server"
+        }
+    ],
+    "settings": {
+        "files.exclude": {
+            "**/.git": true,
+            "**/node_modules": true,
+            "**/library": true,
+            "**/temp": true,
+            "**/local": true
+        },
+        "search.exclude": {
+            "**/node_modules": true,
+            "**/library": true,
+            "**/temp": true,
+            "**/local": true,
+            "**/build": true,
+            "**/dist": true
+        },
+        "typescript.tsdk": "pukepai_server/node_modules/typescript/lib",
+        "debug.toolBarLocation": "docked",
+        "debug.internalConsoleOptions": "openOnSessionStart"
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "🖥️ Server: start:dev (ts-node-dev)",
+                "type": "node",
+                "request": "launch",
+                "cwd": "${workspaceFolder:🖥️ 服务端 (pukepai_server)}",
+                "runtimeExecutable": "npm",
+                "runtimeArgs": [
+                    "run",
+                    "start:dev"
+                ],
+                "skipFiles": [
+                    "<node_internals>/**"
+                ],
+                "console": "integratedTerminal",
+                "internalConsoleOptions": "neverOpen",
+                "env": {
+                    "NODE_ENV": "development"
+                },
+                "windows": {
+                    "runtimeExecutable": "npm.cmd"
+                },
+                "presentation": {
+                    "group": "1_server",
+                    "order": 1
+                }
+            },
+            {
+                "name": "🖥️ Server: Attach (port 9229)",
+                "type": "node",
+                "request": "attach",
+                "port": 9229,
+                "restart": true,
+                "skipFiles": [
+                    "<node_internals>/**"
+                ],
+                "cwd": "${workspaceFolder:🖥️ 服务端 (pukepai_server)}",
+                "presentation": {
+                    "group": "1_server",
+                    "order": 2
+                }
+            },
+            {
+                "name": "🎮 Client: Attach Creator 预览 (gameView/浏览器, port 9223)",
+                "type": "chrome",
+                "request": "attach",
+                "port": 6086,
+                "webRoot": "${workspaceFolder:🎮 客户端 (pukepai)}",
+                "sourceMaps": true,
+                "sourceMapPathOverrides": {
+                    "webpack:///./assets/*": "${workspaceFolder:🎮 客户端 (pukepai)}/assets/*",
+                    "webpack:///assets/*": "${workspaceFolder:🎮 客户端 (pukepai)}/assets/*",
+                    "webpack:///src/*": "${workspaceFolder:🎮 客户端 (pukepai)}/src/*",
+                    "webpack:///*": "${workspaceFolder:🎮 客户端 (pukepai)}/*"
+                },
+                "presentation": {
+                    "group": "2_client",
+                    "order": 1
+                }
+            },
+            {
+                "name": "🎮 Client: Cocos Creator (Chrome 7456)",
+                "type": "chrome",
+                "request": "launch",
+                "url": "http://localhost:7456",
+                "webRoot": "${workspaceFolder:🎮 客户端 (pukepai)}",
+                "sourceMaps": true,
+                "sourceMapPathOverrides": {
+                    "webpack:///./assets/*": "${workspaceFolder:🎮 客户端 (pukepai)}/assets/*",
+                    "webpack:///assets/*": "${workspaceFolder:🎮 客户端 (pukepai)}/assets/*",
+                    "webpack:///src/*": "${workspaceFolder:🎮 客户端 (pukepai)}/src/*",
+                    "webpack:///*": "${workspaceFolder:🎮 客户端 (pukepai)}/*"
+                },
+                "userDataDir": "${workspaceFolder:🎮 客户端 (pukepai)}/.vscode/chrome-debug-profile",
+                "presentation": {
+                    "group": "2_client",
+                    "order": 2
+                }
+            },
+            {
+                "name": "🎮 Client: Edge (Cocos Creator 7456)",
+                "type": "msedge",
+                "request": "launch",
+                "url": "http://localhost:7456",
+                "webRoot": "${workspaceFolder:🎮 客户端 (pukepai)}",
+                "sourceMaps": true,
+                "sourceMapPathOverrides": {
+                    "webpack:///./assets/*": "${workspaceFolder:🎮 客户端 (pukepai)}/assets/*",
+                    "webpack:///assets/*": "${workspaceFolder:🎮 客户端 (pukepai)}/assets/*",
+                    "webpack:///src/*": "${workspaceFolder:🎮 客户端 (pukepai)}/src/*",
+                    "webpack:///*": "${workspaceFolder:🎮 客户端 (pukepai)}/*"
+                },
+                "userDataDir": "${workspaceFolder:🎮 客户端 (pukepai)}/.vscode/edge-debug-profile",
+                "presentation": {
+                    "group": "2_client",
+                    "order": 3
+                }
+            }
+        ],
+        "compounds": [
+            {
+                "name": "🚀 全栈调试: 客户端 + 服务端 (Chrome)",
+                "configurations": [
+                    "🖥️ Server: start:dev (ts-node-dev)",
+                    "🎮 Client: Cocos Creator (Chrome 7456)"
+                ],
+                "stopAll": true,
+                "presentation": {
+                    "group": "0_fullstack",
+                    "order": 1
+                }
+            },
+            {
+                "name": "🚀 全栈调试: 客户端 + 服务端 (Edge)",
+                "configurations": [
+                    "🖥️ Server: start:dev (ts-node-dev)",
+                    "🎮 Client: Edge (Cocos Creator 7456)"
+                ],
+                "stopAll": true,
+                "presentation": {
+                    "group": "0_fullstack",
+                    "order": 2
+                }
+            },
+            {
+                "name": "🚀 全栈调试: Attach Creator 预览 + 服务端",
+                "configurations": [
+                    "🖥️ Server: start:dev (ts-node-dev)",
+                    "🎮 Client: Attach Creator 预览 (gameView/浏览器, port 9223)"
+                ],
+                "stopAll": true,
+                "presentation": {
+                    "group": "0_fullstack",
+                    "order": 3
+                }
+            }
+        ]
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.js-debug",
+            "ms-vscode.vscode-typescript-next",
+            "dbaeumer.vscode-eslint"
+        ]
+    }
+}

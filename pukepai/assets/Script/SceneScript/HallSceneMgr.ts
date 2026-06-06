@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, Button, Color, Component, director, EditBox, instantiate, Label, Node, Prefab, resources, SpriteFrame, sys, UITransform } from 'cc';
+import { _decorator, AudioClip, Button, Color, Component, director, EditBox, HorizontalTextAlignment, instantiate, Label, Layers, Node, Prefab, resources, SpriteFrame, sys, UITransform, VerticalTextAlignment } from 'cc';
 import { noLoadingPost, post } from '../Api/FetchMgr';
 import { CommonUIManager } from '../CommonUIManager';
 import { WebsocketMgr } from '../Api/WebsocketMgr'
@@ -10,12 +10,26 @@ import { ConfirmPopUp } from '../UI/ConfirmPopUp';
 import { CONFIG } from '../Config';
 import { AudioMgr } from '../AudioMgr';
 import Global from '../../Utils/Global'
+import { getHallStrategy, SpecialRules } from '../GameMode/IHallModeStrategy';
 const { ccclass, property } = _decorator;
 
 enum CreateRoomType {
     CreateRoom, // 创建房间
     MatchRoom // 匹配房间
 }
+
+// AI difficulty levels
+export enum RobotLevel {
+    Easy = 0,
+    Medium = 1,
+    Hell = 2,
+}
+
+const RobotLevelLabels: Record<RobotLevel, string> = {
+    [RobotLevel.Easy]: '简单',
+    [RobotLevel.Medium]: '中等',
+    [RobotLevel.Hell]: '地狱',
+};
 
 // 玩法类型枚举
 export enum GameMode {
@@ -37,6 +51,24 @@ export class HallSceneMgr extends Component {
         displayName: "玩法选择节点"
     })
     gameModeSelect = null;
+
+    @property({
+        type: Node,
+        displayName: "双剑特殊规则面板"
+    })
+    specialRulesPanel: Node = null;
+
+    @property({
+        type: Node,
+        displayName: "机器人数量下拉框"
+    })
+    robotCountDropdown: Node = null;
+
+    @property({
+        type: Node,
+        displayName: "AI难度下拉框"
+    })
+    robotLevelDropdown: Node = null;
     
     @property({
         type: Node,
@@ -91,6 +123,24 @@ export class HallSceneMgr extends Component {
     matchTimer: number = 0; // 匹配时间
     wxLaunchOptions: any = {}; // 微信启动参数
     selectedGameMode: GameMode = GameMode.Doudizhu; // 默认斗地主玩法
+    selectedRobotCount: number = 0;
+    selectedRobotLevel: RobotLevel = RobotLevel.Easy;
+    private robotCountDropdownReady: boolean = false;
+    private robotCountOptions: Node = null;
+    private robotCountValueLabel: Label = null;
+    private robotCountOptionLabels: Label[] = [];
+    private robotCountOptionNodes: Node[] = [];
+    private robotLevelDropdownReady: boolean = false;
+    private robotLevelOptions: Node = null;
+    private robotLevelValueLabel: Label = null;
+    private robotLevelOptionLabels: Label[] = [];
+    private robotLevelOptionNodes: Node[] = [];
+    /** Shuangjian special-rule toggles. Stays empty for Doudizhu. */
+    specialRules: SpecialRules = {
+        drawAsOne: false,
+        doubleScore: false,
+        fiveAwardChallenge: false,
+    };
 
     protected async onLoad() {
         // 预加载资源
@@ -105,6 +155,10 @@ export class HallSceneMgr extends Component {
         await this.getLevel();
         // 获取每日赠送元宝
         await this.claimDaily();
+        this.ensureRobotCountDropdown();
+        this.ensureRobotLevelDropdown();
+        this.refreshRobotCountDropdown();
+        this.refreshRobotLevelDropdown(true);
 
         // 获取用户是否又加入的房间，尝试重连
         const reConnectSuccess = await this.reConnection();
@@ -321,6 +375,12 @@ export class HallSceneMgr extends Component {
         if (this.gameModeSelect) {
             this.gameModeSelect.active = true;
         }
+        // 按策略决定是否展示双剑特殊规则面板
+        this.refreshSpecialRulesPanelVisibility();
+        this.ensureRobotCountDropdown();
+        this.ensureRobotLevelDropdown();
+        this.refreshRobotCountDropdown();
+        this.refreshRobotLevelDropdown(true);
     }
 
     selectLevelHide() {
@@ -329,6 +389,28 @@ export class HallSceneMgr extends Component {
         if (this.gameModeSelect) {
             this.gameModeSelect.active = false;
         }
+        if (this.specialRulesPanel) {
+            this.specialRulesPanel.active = false;
+        }
+        if (this.robotCountDropdown) {
+            this.robotCountDropdown.active = false;
+        }
+        if (this.robotLevelDropdown) {
+            this.robotLevelDropdown.active = false;
+        }
+        if (this.robotLevelOptions) {
+            this.robotLevelOptions.active = false;
+        }
+    }
+
+    /**
+     * Show the Shuangjian special-rules panel only when the strategy says
+     * it's relevant for the current mode (Doudizhu hides it).
+     */
+    private refreshSpecialRulesPanelVisibility(): void {
+        if (!this.specialRulesPanel) return;
+        const strategy = getHallStrategy(this.selectedGameMode);
+        this.specialRulesPanel.active = strategy.showSpecialRulesPanel();
     }
 
 
@@ -346,17 +428,16 @@ export class HallSceneMgr extends Component {
     async matchRoom() {
         // 获取当前选择的玩法类型
         const gameMode = this.getSelectedGameMode();
-        console.log("gameMode", gameMode)
-        
+        const strategy = getHallStrategy(gameMode);
+        const payload = strategy.buildPayload(this.selectLevelNum, this.specialRules, this.selectedRobotCount, this.selectedRobotLevel);
+        console.log("matchRoom payload", payload);
+
         // await 等待连接成功返回
         const socketInstance = await WebsocketMgr.instance({ url: "/matching" });
 
         socketInstance.send({
             type: "match",
-            params: {
-                level: this.selectLevelNum,
-                gameMode: gameMode
-            }
+            params: payload,
         });
     }
 
@@ -415,16 +496,15 @@ export class HallSceneMgr extends Component {
     async cancelMatch() {
         // 获取当前选择的玩法类型
         const gameMode = this.getSelectedGameMode();
-        
+        const strategy = getHallStrategy(gameMode);
+        const payload = strategy.buildPayload(this.selectLevelNum, this.specialRules, this.selectedRobotCount, this.selectedRobotLevel);
+
         // await 等待连接成功返回
         const socketInstance = await WebsocketMgr.instance({ url: "/matching" });
 
         socketInstance.send({
             type: "cancelMatch",
-            params: {
-                level: this.selectLevelNum,
-                gameMode: gameMode
-            }
+            params: payload,
         });
     }
 
@@ -434,13 +514,12 @@ export class HallSceneMgr extends Component {
         console.log("level", level)
         // 获取当前选择的玩法类型
         const gameMode = this.getSelectedGameMode();
-        console.log("gameMode", gameMode)
-        
+        const strategy = getHallStrategy(gameMode);
+        const payload = strategy.buildPayload(level, this.specialRules, this.selectedRobotCount, this.selectedRobotLevel);
+        console.log("createRoom payload", payload);
+
         // await 等待连接成功返回
-        let res = await post("/createRoom", {
-            level,
-            gameMode: gameMode
-        })
+        let res = await post("/createRoom", payload);
 
         if (res.code == 200) {
             // 保存加入房间ID，到房间详情再去获取
@@ -615,26 +694,268 @@ export class HallSceneMgr extends Component {
 
     // 获取当前选择的玩法类型
     private getSelectedGameMode(): GameMode {
+        // Trust the in-memory selection first; fall back to UI state for safety.
+        if (this.selectedGameMode === GameMode.Shuangjian || this.selectedGameMode === GameMode.Doudizhu) {
+            return this.selectedGameMode;
+        }
         if (!this.gameModeSelect) return GameMode.Doudizhu;
-        
-        // 查找选中的radio按钮
         const radioButtons = this.gameModeSelect.children;
         for (let i = 0; i < radioButtons.length; i++) {
             const radioButton = radioButtons[i];
             const checkmark = radioButton.getChildByName("Checkmark");
             if (checkmark && checkmark.active) {
-                // 根据按钮索引判断玩法类型（第一个按钮为0，第二个按钮为1）
                 return i === 0 ? GameMode.Doudizhu : GameMode.Shuangjian;
             }
         }
-        return GameMode.Doudizhu; // 默认返回斗地主
+        return GameMode.Doudizhu;
+    }
+
+    private getMaxRobotCount(): number {
+        const strategy = getHallStrategy(this.getSelectedGameMode());
+        return Math.max(0, strategy.getMaxPlayerCount(this.specialRules) - 1);
+    }
+
+    private ensureRobotCountDropdown(): void {
+        if (!this.robotCountDropdown) return;
+        this.initRobotCountDropdownRefs();
+    }
+
+    private ensureRobotLevelDropdown(): void {
+        if (!this.robotLevelDropdown) {
+            this.robotLevelDropdown = findChildByNameRecursive(this.gameModeSelect, 'RobotLevel');
+        }
+        if (!this.robotLevelDropdown) return;
+        this.initRobotLevelDropdownRefs();
+    }
+
+    private setNodeTreeLayer(node: Node, layer: number): void {
+        node.layer = layer;
+        node.children.forEach((child) => this.setNodeTreeLayer(child, layer));
+    }
+
+    private initRobotCountDropdownRefs(): void {
+        if (!this.robotCountDropdown || this.robotCountDropdownReady) return;
+        const buttonNode = findChildByNameRecursive(this.robotCountDropdown, 'RobotCountButton');
+        if (!buttonNode) return;
+        this.robotCountValueLabel = this.getNodeLabel(buttonNode) || this.robotCountValueLabel;
+        buttonNode.off(Node.EventType.TOUCH_END, this.toggleRobotCountOptions, this);
+        buttonNode.on(Node.EventType.TOUCH_END, this.toggleRobotCountOptions, this);
+
+        this.robotCountOptions = findChildByNameRecursive(this.gameModeSelect, 'RobotCountOptions');
+        this.robotCountOptionNodes = [];
+        this.robotCountOptionLabels = [];
+        this.robotCountOptions.children.forEach((optionNode) => {
+            const matched = optionNode.name.match(/^RobotCountOption(\d+)$/);
+            if (!matched) return;
+            const index = Number(matched[1]);
+            const label = this.getNodeLabel(optionNode);
+            this.robotCountOptionNodes[index] = optionNode;
+            if (label) this.robotCountOptionLabels[index] = label;
+            optionNode.off(Node.EventType.TOUCH_END);
+            optionNode.on(Node.EventType.TOUCH_END, (event) => this.selectRobotCount(index, event), this);
+        });
+        this.robotCountDropdownReady = true;
+        this.syncRobotCountOptions(this.getMaxRobotCount());
+    }
+
+    private initRobotLevelDropdownRefs(): void {
+        if (!this.robotLevelDropdown || this.robotLevelDropdownReady) return;
+        this.robotLevelValueLabel = this.getNodeLabel(this.robotLevelDropdown) || this.robotLevelValueLabel;
+        this.robotLevelDropdown.off(Node.EventType.TOUCH_END, this.toggleRobotLevelOptions, this);
+        this.robotLevelDropdown.on(Node.EventType.TOUCH_END, this.toggleRobotLevelOptions, this);
+
+        this.robotLevelOptions = findChildByNameRecursive(this.gameModeSelect, 'RobotLevelOptions');
+        if (!this.robotLevelOptions) return;
+        this.robotLevelOptionNodes = [];
+        this.robotLevelOptionLabels = [];
+        this.robotLevelOptions.children.forEach((optionNode) => {
+            const matched = optionNode.name.match(/^RobotLevelOption(\d+)$/);
+            if (!matched) return;
+            const index = Number(matched[1]) as RobotLevel;
+            const label = this.getNodeLabel(optionNode);
+            this.robotLevelOptionNodes[index] = optionNode;
+            if (label) this.robotLevelOptionLabels[index] = label;
+            optionNode.off(Node.EventType.TOUCH_END);
+            optionNode.on(Node.EventType.TOUCH_END, (event) => this.selectRobotLevel(index, event), this);
+        });
+        this.robotLevelDropdownReady = true;
+        this.syncRobotLevelOptions();
+    }
+
+    private rebindRobotCountDropdownRefs(): void {
+        this.robotCountDropdownReady = false;
+        this.robotCountOptions = null;
+        this.robotCountValueLabel = null;
+        this.robotCountOptionNodes = [];
+        this.robotCountOptionLabels = [];
+        this.initRobotCountDropdownRefs();
+    }
+
+    private rebindRobotLevelDropdownRefs(): void {
+        this.robotLevelDropdownReady = false;
+        this.robotLevelOptions = null;
+        this.robotLevelValueLabel = null;
+        this.robotLevelOptionNodes = [];
+        this.robotLevelOptionLabels = [];
+        this.initRobotLevelDropdownRefs();
+    }
+
+    private syncRobotLevelOptions(): void {
+        if (!this.robotLevelOptions) return;
+        const levelValues = [RobotLevel.Easy, RobotLevel.Medium, RobotLevel.Hell];
+        levelValues.forEach((level, index) => {
+            if (this.robotLevelOptionNodes[level]) return;
+            const optionNode = new Node(`RobotLevelOption${level}`);
+            optionNode.setParent(this.robotLevelOptions);
+            optionNode.setPosition(0, -index * 36, 0);
+            const optionTransform = optionNode.addComponent(UITransform);
+            optionTransform.setAnchorPoint(0.5, 1);
+            optionTransform.setContentSize(100, 34);
+            optionNode.addComponent(Button);
+            const label = optionNode.addComponent(Label);
+            label.string = RobotLevelLabels[level];
+            label.fontSize = 22;
+            label.horizontalAlign = HorizontalTextAlignment.CENTER;
+            label.verticalAlign = VerticalTextAlignment.CENTER;
+            label.color = new Color(255, 255, 255, 255);
+            this.robotLevelOptionNodes[level] = optionNode;
+            this.robotLevelOptionLabels[level] = label;
+            optionNode.on(Node.EventType.TOUCH_END, (event) => this.selectRobotLevel(level, event), this);
+            this.setNodeTreeLayer(optionNode, Layers.Enum.UI_2D);
+        });
+        const optionsTransform = this.robotLevelOptions.getComponent(UITransform);
+        if (optionsTransform) {
+            optionsTransform.setContentSize(100, levelValues.length * 36);
+        }
+    }
+
+    private syncRobotCountOptions(maxRobotCount: number): void {
+        for (let i = 0; i <= maxRobotCount; i++) {
+            if (this.robotCountOptionNodes[i]) continue;
+            const optionNode = new Node(`RobotCountOption${i}`);
+            optionNode.setParent(this.robotCountOptions);
+            optionNode.setPosition(0, -i * 36, 0);
+            const optionTransform = optionNode.addComponent(UITransform);
+            optionTransform.setAnchorPoint(0.5, 1);
+            optionTransform.setContentSize(92, 34);
+            optionNode.addComponent(Button);
+            const label = optionNode.addComponent(Label);
+            label.string = `${i}个`;
+            label.fontSize = 22;
+            label.horizontalAlign = HorizontalTextAlignment.CENTER;
+            label.verticalAlign = VerticalTextAlignment.CENTER;
+            label.color = new Color(255, 255, 255, 255);
+            this.robotCountOptionNodes[i] = optionNode;
+            this.robotCountOptionLabels[i] = label;
+            optionNode.on(Node.EventType.TOUCH_END, (event) => this.selectRobotCount(i, event), this);
+            this.setNodeTreeLayer(optionNode, Layers.Enum.UI_2D);
+        }
+        const optionsHeight = Math.max(34, (maxRobotCount + 1) * 36);
+        const optionsTransform = this.robotCountOptions.getComponent(UITransform);
+        if (optionsTransform) {
+            optionsTransform.setContentSize(92, optionsHeight);
+        }
+    }
+
+    private getNodeLabel(node: Node): Label {
+        const label = node.getComponent(Label);
+        if (label) return label;
+        for (const child of node.children) {
+            const childLabel = this.getNodeLabel(child);
+            if (childLabel) return childLabel;
+        }
+        return null;
+    }
+
+    private toggleRobotCountOptions(): void {
+        if (!this.robotCountOptions) return;
+        this.robotCountOptions.active = !this.robotCountOptions.active;
+        if (this.robotCountOptions.active && this.robotLevelOptions) {
+            this.robotLevelOptions.active = false;
+        }
+    }
+
+    private toggleRobotLevelOptions(): void {
+        if (!this.robotLevelOptions) return;
+        this.robotLevelOptions.active = !this.robotLevelOptions.active;
+        if (this.robotLevelOptions.active && this.robotCountOptions) {
+            this.robotCountOptions.active = false;
+        }
+    }
+
+    private selectRobotCount(count: number, event?: any): void {
+        event?.propagationStopped !== undefined ? event.propagationStopped = true : event?.stopPropagation?.();
+        this.selectedRobotCount = Math.min(Math.max(0, Number(count) || 0), this.getMaxRobotCount());
+        this.refreshRobotCountDropdown(true);
+    }
+
+    private selectRobotLevel(level: RobotLevel, event?: any): void {
+        event?.propagationStopped !== undefined ? event.propagationStopped = true : event?.stopPropagation?.();
+        const normalizedLevel = Number(level);
+        this.selectedRobotLevel = normalizedLevel >= RobotLevel.Easy && normalizedLevel <= RobotLevel.Hell
+            ? normalizedLevel as RobotLevel
+            : RobotLevel.Easy;
+        this.refreshRobotLevelDropdown(true);
+    }
+
+    private refreshRobotCountDropdown(closeOptions: boolean = false): void {
+        if (!this.robotCountDropdown) return;
+        const maxRobotCount = this.getMaxRobotCount();
+        if (this.selectedRobotCount > maxRobotCount) {
+            this.selectedRobotCount = maxRobotCount;
+        }
+        this.syncRobotCountOptions(maxRobotCount);
+        this.robotCountDropdown.active = !!this.selectLevel?.active;
+        if (this.robotCountOptions && closeOptions) {
+            this.robotCountOptions.active = false;
+        }
+        if (this.robotCountValueLabel) {
+            this.robotCountValueLabel.string = `${this.selectedRobotCount}/${maxRobotCount}个`;
+        }
+        for (let i = 0; i < this.robotCountOptionNodes.length; i++) {
+            const optionNode = this.robotCountOptionNodes[i];
+            const label = this.robotCountOptionLabels[i];
+            if (optionNode) {
+                optionNode.active = i <= maxRobotCount;
+            }
+            if (label) {
+                label.string = `${i}个`;
+                label.color = i === this.selectedRobotCount
+                    ? new Color(255, 230, 90, 255)
+                    : new Color(255, 255, 255, 255);
+            }
+        }
+    }
+
+    private refreshRobotLevelDropdown(closeOptions: boolean = false): void {
+        this.ensureRobotLevelDropdown();
+        if (!this.robotLevelDropdown) return;
+        this.syncRobotLevelOptions();
+        this.robotLevelDropdown.active = !!this.selectLevel?.active;
+        if (this.robotLevelOptions && closeOptions) {
+            this.robotLevelOptions.active = false;
+        }
+        if (this.robotLevelValueLabel) {
+            this.robotLevelValueLabel.string = RobotLevelLabels[this.selectedRobotLevel];
+        }
+        [RobotLevel.Easy, RobotLevel.Medium, RobotLevel.Hell].forEach((level) => {
+            const label = this.robotLevelOptionLabels[level];
+            if (label) {
+                label.string = RobotLevelLabels[level];
+                label.color = level === this.selectedRobotLevel
+                    ? new Color(255, 230, 90, 255)
+                    : new Color(255, 255, 255, 255);
+            }
+        });
     }
 
     // 玩法选择切换
     onGameModeSelected(event, gameMode: GameMode) {
-        console.log("选择的玩法:", gameMode);
-        this.selectedGameMode = gameMode;
-        
+        // The button-bound customEventData arrives as a string in Cocos
+        const mode: GameMode = (typeof gameMode === 'string') ? Number(gameMode) as GameMode : gameMode;
+        console.log("选择的玩法:", mode);
+        this.selectedGameMode = mode;
+
         // 更新所有radio按钮的状态
         if (this.gameModeSelect) {
             const radioButtons = this.gameModeSelect.children;
@@ -642,12 +963,46 @@ export class HallSceneMgr extends Component {
                 const radioButton = radioButtons[i];
                 const checkmark = radioButton.getChildByName("Checkmark");
                 if (checkmark) {
-                    // 根据按钮索引判断是否选中（第一个按钮为0，第二个按钮为1）
-                    checkmark.active = (gameMode === GameMode.Doudizhu && i === 0) || 
-                                      (gameMode === GameMode.Shuangjian && i === 1);
+                    checkmark.active = (mode === GameMode.Doudizhu && i === 0)
+                        || (mode === GameMode.Shuangjian && i === 1);
                 }
             }
         }
+        // Reset Shuangjian special rules when leaving the mode.
+        if (mode === GameMode.Doudizhu) {
+            this.specialRules = { drawAsOne: false, doubleScore: false, fiveAwardChallenge: false };
+        }
+        this.refreshSpecialRulesPanelVisibility();
+        this.ensureRobotCountDropdown();
+        this.ensureRobotLevelDropdown();
+        this.rebindRobotCountDropdownRefs();
+        this.rebindRobotLevelDropdownRefs();
+        this.refreshRobotCountDropdown(false);
+        this.refreshRobotLevelDropdown(false);
+        if (this.robotCountOptions) {
+            this.robotCountOptions.active = true;
+        }
+        if (this.robotLevelOptions) {
+            this.robotLevelOptions.active = false;
+        }
+    }
+
+    /**
+     * Toggle a Shuangjian special rule. Bind from the inspector with
+     * customEventData equal to one of: 'drawAsOne' | 'doubleScore' |
+     * 'fiveAwardChallenge'.
+     */
+    onSpecialRuleToggle(event: any, ruleKey: keyof SpecialRules): void {
+        if (!ruleKey) return;
+        this.specialRules[ruleKey] = !this.specialRules[ruleKey];
+        // Keep the visual checkmark in sync if the toggle node has one.
+        const target: Node = event?.target as Node;
+        if (target) {
+            const checkmark = target.getChildByName('Checkmark');
+            if (checkmark) checkmark.active = !!this.specialRules[ruleKey];
+        }
+        console.log('specialRules', this.specialRules);
+        this.refreshRobotCountDropdown();
     }
 
     protected onDestroy(): void {

@@ -1,11 +1,12 @@
 import { _decorator, Component, Node, Sprite, Vec2, EventTouch, UITransform, Input, input, Vec3, Vec4, Color, sys, Button, AudioClip } from 'cc';
 import { CardItem } from './CardItem';
-import { RoomScene } from './RoomScene';
+import type { RoomScene } from './RoomScene';
 import { findChildByNameRecursive } from '../../Utils/Tools';
 import CardLogic from '../../Utils/cardLogic';
 import { AudioMgr } from '../AudioMgr';
+import { GameMode } from '../GameMode/IGameModeView';
+import { judgeCardTypeShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
 const { ccclass, property } = _decorator;
-
 @ccclass('CardSelection')
 export class CardSelection extends Component {
     private cards: any[] = [];
@@ -13,7 +14,7 @@ export class CardSelection extends Component {
     private startPosition = null;
     private movePosition = null;
     @property({
-        type: RoomScene,
+        type: Component,
         displayName: "房间场景脚本"
     })
     roomScene: RoomScene = null; // 绑定房间场景脚本，获取该脚本的数据
@@ -29,6 +30,7 @@ export class CardSelection extends Component {
     SelectCardAudio: AudioClip = null; // 卡牌按钮控制器
     // 本地存储用户信息
     userInfo: any = {};
+    private currentTurnIsYaPai: boolean | null = null;
 
 
     protected start(): void {
@@ -41,15 +43,15 @@ export class CardSelection extends Component {
     }
 
     onLoad() {
-        this.node.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
-        this.node.on(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
-        this.node.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
-        this.node.on(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
+        input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
+        input.on(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
+        input.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
+        input.on(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
     }
 
     onDestroy() {
-        this.node.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
-        this.node.off(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
+        input.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
+        input.off(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
         input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
         input.off(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
     }
@@ -61,6 +63,7 @@ export class CardSelection extends Component {
             const cardRect = card.getComponent(UITransform)!.getBoundingBoxToWorld();
             cardList.push({
                 card: card,
+                cardIndex: card.getComponent(CardItem).cardIndex || (card.getComponent(CardItem).cardNum + card.getComponent(CardItem).cardType * 13),
                 cardNum: card.getComponent(CardItem).cardNum,
                 cardType: card.getComponent(CardItem).cardType,
                 minX: cardRect.x,
@@ -77,28 +80,44 @@ export class CardSelection extends Component {
     // 获取当前选中的扑克牌
     getSelectCards() {
         return this.preSelectedCards.map(card => {
+            const cardItem = card.getComponent(CardItem);
             return {
                 card: card,
-                cardNum: card.getComponent(CardItem).cardNum,
-                cardType: card.getComponent(CardItem).cardType,
-                cardIndex: card.getComponent(CardItem).cardNum + card.getComponent(CardItem).cardType * 13
+                cardNum: cardItem.cardNum,
+                cardType: cardItem.cardType,
+                cardIndex: cardItem.cardIndex || (cardItem.cardNum + cardItem.cardType * 13)
             }
         });
     }
 
+    private isTouchInCards(position: Vec2) {
+        return this.cards.some(({ card, minX, maxX }) => {
+            if (!card?.active) return false;
+            const cardRect = card.getComponent(UITransform)!.getBoundingBoxToWorld();
+            return position.x >= minX && position.x <= maxX && position.y >= cardRect.y && position.y <= cardRect.y + cardRect.height;
+        });
+    }
+
     private onTouchStart(event: EventTouch) {
+        const position = event.getUILocation();
+        if (!this.isTouchInCards(position)) return;
+
         console.log("onTouchStart")
-        this.startPosition = event.getUILocation();
+        this.startPosition = position;
         this.checkPreSelection(true);
     }
 
     private onTouchMove(event: EventTouch) {
+        if (!this.startPosition) return;
+
         console.log("onTouchMove")
         this.movePosition = event.getUILocation();
         this.checkPreSelection(true);
     }
 
     private onTouchEnd(event: EventTouch) {
+        if (!this.startPosition) return;
+
         console.log("开始位子", this.startPosition);
         console.log("移动位子", this.movePosition);
         // 计算选中的牌
@@ -193,7 +212,7 @@ export class CardSelection extends Component {
         this.deselectAllCard();
 
         cardNumList.forEach((cardNUm) => {
-            const cardInfo = this.cards.find(item => (item.cardNum + item.cardType * 13) == cardNUm);
+            const cardInfo = this.cards.find(item => item.cardIndex == cardNUm);
             console.log("cardInfo", cardInfo)
             console.log("cardNUm", cardNUm)
             // 当前选中的卡牌
@@ -209,13 +228,65 @@ export class CardSelection extends Component {
         this.updatePlayCardBtnStyle();
     }
 
+    private getRealCard(cardIndex: number) {
+        return cardIndex > 100 ? cardIndex - 100 : cardIndex;
+    }
+
+    private getRank(cardIndex: number) {
+        const realCard = this.getRealCard(cardIndex);
+        if (realCard === 53 || realCard === 54) return realCard;
+        return (realCard - 1) % 13 + 1;
+    }
+
+    private isShuangjianMode() {
+        return this.roomScene?.roomInfo?.game_mode === GameMode.SHUANGJIAN;
+    }
+
+    private isShuangjian510K(cardList: number[]) {
+        if (cardList.length !== 3) return false;
+        const ranks = cardList.map(card => this.getRank(card)).sort((a, b) => a - b);
+        return ranks[0] === 5 && ranks[1] === 10 && ranks[2] === 13;
+    }
+
+    private getSelectedCardType(selectCardNum: number[]) {
+        if (this.isShuangjianMode()) {
+            return judgeCardTypeShuangjian(selectCardNum);
+        }
+        return CardLogic.judgeCardType(selectCardNum);
+    }
+
+    private canPlaySelectedCards(lastRecord, selectCardNum: number[], isYaPai: boolean) {
+        if (this.isShuangjianMode()) {
+            if (selectCardNum.length <= 0) return false;
+            // 双剑牌型较多，先在客户端放行 510K，最终合法性由服务端校验。
+            if (this.isShuangjian510K(selectCardNum)) return true;
+            // 其他双剑牌型沿用双剑基础校验；压牌时不再使用斗地主 compare 拦截，交给服务端判断。
+            return isYaPai ? true : judgeCardTypeShuangjian(selectCardNum).valid;
+        }
+
+        if (isYaPai) {
+            return selectCardNum.length > 0 && CardLogic.compareWithCard(lastRecord.playCard, selectCardNum) != false;
+        }
+        return !!CardLogic.judgeCardType(selectCardNum);
+    }
+
+    setCurrentTurnIsYaPai(isYaPai: boolean | null) {
+        this.currentTurnIsYaPai = isYaPai;
+    }
+
+    getCurrentTurnIsYaPai() {
+        return this.currentTurnIsYaPai;
+    }
+
     // 更新出牌按钮的样式
     updatePlayCardBtnStyle() {
         // 查询最近一条的出牌记录
         const lastRecord = this.roomScene.getLastRecord();
         console.log('lastRecord', lastRecord);
-        // 最后一次出牌的记录如果是我的话，就不是压别人的牌，而是出牌
-        const isYaPai = (!lastRecord?.userId || lastRecord?.userId == this.userInfo.user_id) ? false : true;
+        // 优先使用服务端当前回合下发的压牌状态，避免已出完玩家的最后一手旧牌继续影响客户端判断。
+        const isYaPai = this.currentTurnIsYaPai !== null
+            ? this.currentTurnIsYaPai
+            : ((!lastRecord?.userId || lastRecord?.userId == this.userInfo.user_id) ? false : true);
         // 获取选择的牌值
         const selectCardNum = this.getSelectCards().map(item => {
             return item.cardIndex
@@ -225,28 +296,16 @@ export class CardSelection extends Component {
 
         console.log("是否压牌", isYaPai)
         console.log("选择牌值", selectCardNum)
-        console.log("上个玩家出牌", lastRecord.playCard);
-        console.log("选择牌类型", CardLogic.judgeCardType(selectCardNum));
+        console.log("上个玩家出牌", lastRecord?.playCard || []);
+        console.log("选择牌类型", this.getSelectedCardType(selectCardNum));
 
-        // 判断是否压牌
-        if (isYaPai) {
-            if (selectCardNum?.length <= 0 || CardLogic.compareWithCard(lastRecord.playCard, selectCardNum) == false) {
-                // 出牌按钮灰色
-                playCardBtn.getComponent(Sprite).color = new Color(162, 158, 158, 255);
-                // 按钮可点击
-                playCardBtn.getComponent(Button).interactable = false;
-            } else {
-                // 出牌按钮
-                playCardBtn.getComponent(Sprite).color = new Color(255, 255, 255, 255);
-                // 按钮可点击
-                playCardBtn.getComponent(Button).interactable = true;
-            }
-        } else if (CardLogic.judgeCardType(selectCardNum)) {// 判断选择牌是否符合规则
+        const canPlay = this.canPlaySelectedCards(lastRecord, selectCardNum, isYaPai);
+        if (canPlay) {
             // 出牌按钮高亮
             playCardBtn.getComponent(Sprite).color = new Color(255, 255, 255, 255);
             playCardBtn.getComponent(Button).interactable = true;
         } else {
-            // 出牌按钮高亮
+            // 出牌按钮灰色
             playCardBtn.getComponent(Sprite).color = new Color(162, 158, 158, 255);
             playCardBtn.getComponent(Button).interactable = false;
         }

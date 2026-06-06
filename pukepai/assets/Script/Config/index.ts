@@ -6,7 +6,7 @@
  * @author: sharkgao
  * @LastEditors: sharkgao
  */
-const dev = false;//window.CC_DEBUG; //   && false
+const dev = window.CC_DEBUG;// false; //   && false
 
 export const CONFIG = {
     API_BASE_URL: dev

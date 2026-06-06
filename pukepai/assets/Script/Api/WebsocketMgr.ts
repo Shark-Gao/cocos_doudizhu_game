@@ -1,8 +1,6 @@
 import { director, Scene, find, sys } from "cc";
 import { eventTarget } from "../../Utils/EventListening";
 import { CommonUIManager } from "../CommonUIManager";
-import { HallSceneMgr } from "../SceneScript/HallSceneMgr";
-import { RoomScene } from "../RoomScene/RoomScene";
 import { CONFIG } from "../Config";
 
 // websocket send 消息类型
@@ -101,12 +99,12 @@ export class WebsocketMgr {
                 // 重连成功，需要更新最新数据，比如获取房间信息、匹配
                 if (this.url.includes("/matching")) { // 匹配请求链接
                     // 匹配重连成功，重新发送请求进行匹配
-                    const scriptCom = find("Canvas").getComponent(HallSceneMgr);
+                    const scriptCom = find("Canvas")?.getComponent('HallSceneMgr') as any;
                     // 断线重连，重新发送请求进行匹配
                     if (scriptCom) { scriptCom.matchRoom(); }
                 } else if (this.url.includes("/roomInfo")) { // 游戏房间请求链接
                     console.log("调用重连获取房间信息")
-                    const scriptCom = find("Canvas").getComponent(RoomScene);
+                    const scriptCom = find("Canvas")?.getComponent('RoomScene') as any;
                     // 断线重连获取房间信息
                     if (scriptCom) { scriptCom.getRoomInfo() }
                 }
@@ -187,7 +185,7 @@ export class WebsocketMgr {
         // 判断是哪个请求时断开了连接
         if (this.url.includes("/matching")) {
             // 匹配超时,重连失败，关闭匹配弹框
-            const component = find("Canvas").getComponent(HallSceneMgr);
+            const component = find("Canvas")?.getComponent('HallSceneMgr') as any;
             if (component) {
                 component.matchLoadingHide();
             }

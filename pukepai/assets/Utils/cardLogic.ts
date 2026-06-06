@@ -1,5 +1,94 @@
-import { _countCards, _getPlaneTriples, _findMaxConsecutiveTriples, _validatePlaneWithout, _validatePlaneWithSingle, _validatePlaneWithPair } from './Tools'
+const _countCards = (cards) => {
+    const countMap = {};
+    cards.forEach(card => {
+        countMap[card.cardSize] = (countMap[card.cardSize] || 0) + 1;
+    });
+    return countMap;
+}
 
+const _findMaxConsecutiveTriples = (triples) => {
+    let maxLength = 0;
+    let maxGroup = [];
+
+    for (let i = 0; i < triples.length; i++) {
+        for (let j = i; j < triples.length; j++) {
+            let isConsecutive = true;
+            for (let k = i; k < j; k++) {
+                if (triples[k + 1] !== triples[k] + 1) {
+                    isConsecutive = false;
+                    break;
+                }
+            }
+
+            if (isConsecutive && (j - i + 1) > maxLength) {
+                maxLength = j - i + 1;
+                maxGroup = triples.slice(i, j + 1);
+            }
+        }
+    }
+
+    return maxGroup;
+}
+
+const _getPlaneTriples = (cards) => {
+    const countMap = _countCards(cards);
+    const possibleTriples = Object.keys(countMap)
+        .filter(card => countMap[card] >= 3)
+        .map(Number)
+        .sort((a, b) => a - b);
+
+    return _findMaxConsecutiveTriples(possibleTriples);
+}
+
+const _validatePlaneWithout = (countMap, triples) => {
+    for (const card of triples) {
+        if (countMap[card] !== 3) {
+            return false;
+        }
+    }
+
+    const allCards = Object.keys(countMap).map(Number);
+    return allCards.every(card => triples.includes(card));
+}
+
+const _validatePlaneWithSingle = (countMap, triples) => {
+    const usedCards = { ...countMap };
+    const groupCount = triples.length;
+
+    for (const card of triples) {
+        usedCards[card] -= 3;
+        if (usedCards[card] < 0) return false;
+    }
+
+    let totalSingleCards = 0;
+    for (const key in usedCards) {
+        if (usedCards.hasOwnProperty(key)) {
+            totalSingleCards += usedCards[key];
+        }
+    }
+
+    return totalSingleCards === groupCount;
+}
+
+const _validatePlaneWithPair = (countMap, triples) => {
+    const usedCards = { ...countMap };
+    const groupCount = triples.length;
+
+    for (const card of triples) {
+        usedCards[card] -= 3;
+        if (usedCards[card] < 0) return false;
+    }
+
+    let pairCount = 0;
+    for (const card in usedCards) {
+        const count = usedCards[card];
+        if (count === 0) continue;
+        if (count % 2 !== 0) return false;
+        pairCount += count / 2;
+    }
+
+    return pairCount === groupCount;
+}
 
 // 斗地主卡牌基础类，判断类型，比较大小
 
@@ -102,7 +191,7 @@ export function getPoint(cardCount) {
             }
         })
     } else {
-        []
+        return [];
     }
 }
 

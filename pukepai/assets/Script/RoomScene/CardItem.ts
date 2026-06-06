@@ -17,6 +17,11 @@ export class CardItem extends Component {
     public cardNum = 0; // 1-13 为 A-K 53 为小王 54 为大王 55 为背面
     @property({
         type: CCInteger,
+        displayName: '原始牌ID',
+    })
+    public cardIndex = 0; // 服务端原始牌ID，双剑第二副牌为 101-154
+    @property({
+        type: CCInteger,
         displayName: '卡牌类型(0 方块 1 梅花 2 红桃 3 黑桃 4 王)',
     })
     cardType: CardType = CardType.FANGKUAI;

@@ -46,8 +46,8 @@ class CustomFetch {
         }
         let response;
         try {
+            console.log('fetch url:', this.baseUrl + url);
             if (window.wx) {
-                console.log('fetch url:', this.baseUrl + url);
                 // 发起请求
                 response = await new Promise((resolve, reject) => {
                     wx.request({
