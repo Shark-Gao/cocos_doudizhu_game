@@ -640,7 +640,7 @@ export class RoomPlayCard extends Component {
             userNodeId.forEach(({ nodeId, node }) => {
                 // 出牌用户
                 if (nodeId == data.userId) {
-                    findChildByNameRecursive(node, "Trusteeship").active = true;
+                    findChildByNameRecursive(node, "Trusteeship").active = !!data.isHosted;
                 }
             })
 

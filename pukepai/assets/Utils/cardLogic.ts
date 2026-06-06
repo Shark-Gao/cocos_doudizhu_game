@@ -265,13 +265,7 @@ export default class CardLogic {
         }
 
         const countMap = _countCards(cardList);
-        const countMapKeys = Object.keys(countMap);
-        // 第一张牌的数量为3&第二张为1，或者第二张为3&第一张为1
-        if (countMap[countMapKeys[0]] == 3 && countMap[countMapKeys[1]] == 2 || countMap[countMapKeys[0]] == 2 && countMap[countMapKeys[1]] == 3) {
-            return true;
-        }
-
-        return false;
+        return Object.keys(countMap).some(key => countMap[key] === 3);
     };
 
     //四张炸弹

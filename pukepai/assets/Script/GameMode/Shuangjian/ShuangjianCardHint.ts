@@ -175,8 +175,6 @@ function detectThreeWithTwoOrPlane(cards: number[]): SjJudgeResult | null {
         if (run.length > bestRun.length) bestRun = run;
     }
     if (bestRun.length === 1 && cards.length === 5) {
-        const pairRanks = Object.keys(map).map(Number).filter(r => map[r] === 2);
-        if (pairRanks.length !== 1) return null;
         return {
             valid: true, type: SjCardType.THREE_WITH_TWO,
             headCount: 0, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,
