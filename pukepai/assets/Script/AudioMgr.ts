@@ -18,6 +18,7 @@ export class AudioMgr {
     }
 
     private _audioSource: AudioSource;
+    private _currentMusic: AudioClip | string = null;
     constructor() {
         //@en create a node as audioMgr
         //@zh 创建一个节点作为 audioMgr
@@ -60,6 +61,7 @@ export class AudioMgr {
                 } else {
                     // 传入 directorName 名称，如果是资源加载完成，且当前场景和传入场景名称一致，则播放音频
                     if (!directorName || (directorName && director.getScene().name == directorName)) {
+                        console.log('播放音频', clip);
                         this._audioSource.playOneShot(clip, volume);
                     }
                 }
@@ -77,8 +79,15 @@ export class AudioMgr {
      */
     play(sound: AudioClip | string, volume: number = 1.0, loop: boolean = false, directorName = "") {
         console.log('播放音乐', sound, sound instanceof AudioClip)
+        if (this._currentMusic === sound && this._audioSource.playing) {
+            return;
+        }
+
+        this._currentMusic = sound;
+        this._audioSource.stop();
+        this._audioSource.clip = null;
+
         if (sound instanceof AudioClip) {
-            // this._audioSource.stop();
             this._audioSource.loop = loop;
             this._audioSource.clip = sound;
             this.audioSource.volume = volume;
@@ -88,7 +97,8 @@ export class AudioMgr {
                 // play audio clip
                 if (err) {
                     console.log("音频加载失败", err);
-                } else if (!directorName || (directorName && director.getScene().name == directorName)) { // 传入播放音乐的场景名称的话，如果在音频加载期间切换场景的话，音频加载完毕也不播放
+                    this._currentMusic = null;
+                } else if (this._currentMusic === sound && (!directorName || (directorName && director.getScene().name == directorName))) { // 传入播放音乐的场景名称的话，如果在音频加载期间切换场景的话，音频加载完毕也不播放
                     this._audioSource.loop = loop;
                     this._audioSource.clip = audioClip;
                     this.audioSource.volume = volume;
@@ -100,9 +110,8 @@ export class AudioMgr {
             resources.load(sound, (err, clip: AudioClip) => {
                 if (err) {
                     console.log("音频加载失败", err);
-                } else if (!directorName || (directorName && director.getScene().name == directorName)) { // 传入播放音乐的场景名称的话，如果在音频加载期间切换场景的话，音频加载完毕也不播放
+                } else if (this._currentMusic === sound && (!directorName || (directorName && director.getScene().name == directorName))) { // 传入播放音乐的场景名称的话，如果在音频加载期间切换场景的话，音频加载完毕也不播放
                     console.log("播放背景音乐")
-                    // this._audioSource.stop();
                     this._audioSource.loop = loop;
                     this._audioSource.clip = clip;
                     this.audioSource.volume = volume;
@@ -117,6 +126,7 @@ export class AudioMgr {
      */
     stop() {
         console.log('停止音乐');
+        this._currentMusic = null;
         this._audioSource.stop();
         // stop 清空 clip
         AudioMgr.inst.audioSource.clip = null;

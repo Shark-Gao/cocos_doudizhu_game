@@ -263,6 +263,10 @@ export function timestampToDateTime(timestamp) {
 export function playCardAudio(cards) {
   if (cards?.length <= 0) return;
   const realCards = cards.map(card => toRealCard(card));
+  if (realCards.length === 2 && realCards.includes(53) && realCards.includes(54)) {
+    return AudioType.wangzha;
+  }
+
   const cardType = CardLogic.judgeCardType(realCards);
   if (!cardType?.name) return;
 

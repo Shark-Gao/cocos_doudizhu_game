@@ -50,6 +50,8 @@ export class MyDealCardAmt extends Component {
 
         // 展示
         this.node.active = true;
+        // 发牌音频只在整段发牌动画开始时播放一次
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.sendcard));
         // 要移动到的目标节点位子
         const targetOpt = this.myCardParent.getWorldPosition();
         const spacing = (this.myCardParent.getComponent('Card') as any)?.getMyCardSpacing?.() || 40;
@@ -59,9 +61,6 @@ export class MyDealCardAmt extends Component {
             const card = cards[i % cards.length];
 
             this.scheduleOnce(() => {
-                // 发牌音频
-                AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.givecard));
-
                 card.setPosition(0, 71, 0);
                 card.active = true;
 

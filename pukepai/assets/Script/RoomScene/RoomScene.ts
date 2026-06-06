@@ -888,8 +888,8 @@ export class RoomScene extends Component {
                     const timeDown = findChildByNameRecursive(node, "TimeDown");
                     timeDown.active = true;
                     timeDown.getChildByName('Str').getComponent(Label).string = data.downTime;
-                    if (nodeId == this.userInfo.user_id) {
-                        AudioMgr.inst.playOneShot(getRoomMainAudio(data.downTime <= 3 ? RoomMainAudio.remind : RoomMainAudio.ring));
+                    if (nodeId == this.userInfo.user_id && data.downTime <= 5) {
+AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.ring));
                     }
                 } else {
                     if (nodeId == this.userInfo.user_id && data.downTime <= 0) {
@@ -1106,8 +1106,8 @@ export class RoomScene extends Component {
                             // 展示加倍倒计时
                             findChildByNameRecursive(node, "TimeDown").active = true;
                             findChildByNameRecursive(node, "TimeDown").getChildByName('Str').getComponent(Label).string = data.downTime;
-                            if (nodeId == this.userInfo.user_id) {
-                                AudioMgr.inst.playOneShot(getRoomMainAudio(data.downTime <= 3 ? RoomMainAudio.remind : RoomMainAudio.ring));
+                            if (nodeId == this.userInfo.user_id && data.downTime <= 5) {
+AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.ring));
                             }
                         }
                     }

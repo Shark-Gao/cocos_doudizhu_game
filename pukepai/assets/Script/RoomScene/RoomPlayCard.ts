@@ -170,13 +170,14 @@ export class RoomPlayCard extends Component {
     }
 
     private playRoomMainCardEffect(playCard: number[]): void {
+        if (playCard?.length <= 0) return;
+
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.givecard));
         const playCardAudioName = playCardAudio(playCard);
         if (playCardAudioName === 'zhadan' || playCardAudioName === 'wangzha') {
             AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.boom));
         } else if (playCardAudioName === 'feiji') {
             AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.plane));
-        } else if (playCard?.length > 0) {
-            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.sendcard));
         }
     }
 
@@ -266,8 +267,8 @@ export class RoomPlayCard extends Component {
                     findChildByNameRecursive(node, "TimeDown").active = true;
                     const timeDown = findChildByNameRecursive(node, "TimeDown");
                     timeDown.getChildByName('Str').getComponent(Label).string = data.downTime;
-                    if (nodeId == this.userInfo.user_id) {
-                        AudioMgr.inst.playOneShot(getRoomMainAudio(data.downTime <= 3 ? RoomMainAudio.remind : RoomMainAudio.ring));
+                    if (nodeId == this.userInfo.user_id && data.downTime <= 5) {
+                        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.ring));
                     }
                 } else {
                     if (nodeId == this.userInfo.user_id && data.downTime <= 0) {
@@ -651,14 +652,15 @@ export class RoomPlayCard extends Component {
             if (data.playCard?.length <= 0) {
                 this.playUserAudio(data.userId, "buyao");
             } else {
+                this.playRoomMainCardEffect(data.playCard);
                 // 出牌音频名称;
                 const playCardAudioName = playCardAudio(data.playCard);
-                // 播放音频
-                this.playUserAudio(data.userId, playCardAudioName);
+                // 延迟播放玩家语音，避免和出牌动作音效同帧叠加导致 givecard 听不到
+                this.scheduleOnce(() => {
+                    this.playUserAudio(data.userId, playCardAudioName);
+                }, 0.12);
             }
             // }
-
-            this.playRoomMainCardEffect(data.playCard);
 
             // 当前登录玩家机器人出牌后，重置第一次获取出牌倒计时状态，下次轮到自己出牌时，更新出牌按钮状态
             if (this.userInfo.user_id == data.userId) {
@@ -696,11 +698,13 @@ export class RoomPlayCard extends Component {
             } else {
                 // 渲染用户出的卡牌
                 this.playCardRender(data.playCard, data.userId);
+                this.playRoomMainCardEffect(data.playCard);
                 // 出牌音频名称;
                 const playCardAudioName = playCardAudio(data.playCard);
-                // 播放音频
-                this.playUserAudio(data.userId, playCardAudioName);
-                this.playRoomMainCardEffect(data.playCard);
+                // 延迟播放玩家语音，避免和出牌动作音效同帧叠加导致 givecard 听不到
+                this.scheduleOnce(() => {
+                    this.playUserAudio(data.userId, playCardAudioName);
+                }, 0.12);
             }
 
             // 当前玩家出牌后
