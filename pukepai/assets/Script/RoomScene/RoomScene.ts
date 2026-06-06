@@ -1,4 +1,4 @@
-import { _decorator, Component, director, Label, Node, resources, SpriteFrame, sys, Animation, UITransform, Widget, instantiate, Prefab, find, game, UIOpacity } from 'cc';
+import { _decorator, Component, director, Label, Node, resources, SpriteFrame, sys, Animation, UITransform, Widget, instantiate, Prefab, find, game, UIOpacity, Input, input, EventTouch } from 'cc';
 import { Card } from './Card';
 import { WebsocketMgr } from '../Api/WebsocketMgr';
 import { eventTarget } from '../../Utils/EventListening';
@@ -124,6 +124,10 @@ export class RoomScene extends Component {
     replaceLogin: boolean = false;
     // 双剑 生命周期辅助器（在 game_mode=1 时接管双剑专属 socket 事件）
     private modeLifecycle: ShuangjianRoomLifecycle | null = null;
+    private readonly testPanelTouchCount = 5;
+    private readonly testPanelLongPressTime = 1.5;
+    private isTestPanelLongPressing: boolean = false;
+    private testPanelNode: Node = null;
 
     start() {
         try {
@@ -192,12 +196,17 @@ export class RoomScene extends Component {
         this.bottomCardAmtNode.getComponent(Animation).on(Animation.EventType.FINISHED, this.onBottomCardAmt, this)
         // 监听双剑队友公开
         eventTarget.on("shuangjian:partnerRevealed", this.onShuangjianPartnerRevealed, this);
+        this.initTestPanelShortcut();
     }
 
     update(deltaTime: number) {
 
     }
     protected onDestroy(): void {
+        input.off(Input.EventType.TOUCH_START, this.onTestPanelTouchStart, this);
+        input.off(Input.EventType.TOUCH_END, this.onTestPanelTouchEnd, this);
+        input.off(Input.EventType.TOUCH_CANCEL, this.onTestPanelTouchEnd, this);
+        this.unschedule(this.toggleTestPanelByLongPress);
         // 先拆除双剑 modeView 的 socket 订阅，避免身份切换/退出后事件泄露
         if (this.modeLifecycle) {
             this.modeLifecycle.detach();
@@ -1168,6 +1177,36 @@ export class RoomScene extends Component {
                 query: `roomId=${this.roomId}`,
             })
         }
+    }
+
+    private initTestPanelShortcut() {
+        this.testPanelNode = findChildByNameRecursive(this.node, "test");
+        input.on(Input.EventType.TOUCH_START, this.onTestPanelTouchStart, this);
+        input.on(Input.EventType.TOUCH_END, this.onTestPanelTouchEnd, this);
+        input.on(Input.EventType.TOUCH_CANCEL, this.onTestPanelTouchEnd, this);
+    }
+
+    private onTestPanelTouchStart(event: EventTouch) {
+        if (this.isTestPanelLongPressing || event.getAllTouches().length < this.testPanelTouchCount) return;
+
+        this.isTestPanelLongPressing = true;
+        this.scheduleOnce(this.toggleTestPanelByLongPress, this.testPanelLongPressTime);
+    }
+
+    private onTestPanelTouchEnd(event: EventTouch) {
+        if (!this.isTestPanelLongPressing || event.getAllTouches().length >= this.testPanelTouchCount) return;
+
+        this.isTestPanelLongPressing = false;
+        this.unschedule(this.toggleTestPanelByLongPress);
+    }
+
+    private toggleTestPanelByLongPress() {
+        this.isTestPanelLongPressing = false;
+        const testPanel = this.testPanelNode || findChildByNameRecursive(this.node, "test");
+        if (!testPanel) return;
+
+        this.testPanelNode = testPanel;
+        testPanel.active = !testPanel.active;
     }
 
     // 测试

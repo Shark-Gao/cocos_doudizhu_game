@@ -160,7 +160,7 @@ function detectDoubleStraight(cards: number[]): SjJudgeResult | null {
 function detectThreeWithTwoOrPlane(cards: number[]): SjJudgeResult | null {
     if (cards.length < 5) return null;
     const map = countByRank(cards);
-    const tripleRanks = Object.keys(map).map(Number).filter(r => map[r] >= 3 && r !== 53 && r !== 54);
+    const tripleRanks = Object.keys(map).map(Number).filter(r => map[r] === 3 && r !== 53 && r !== 54);
     if (tripleRanks.length === 0) return null;
     const orderedAsc = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2];
     tripleRanks.sort((a, b) => orderedAsc.indexOf(a) - orderedAsc.indexOf(b));
@@ -175,6 +175,8 @@ function detectThreeWithTwoOrPlane(cards: number[]): SjJudgeResult | null {
         if (run.length > bestRun.length) bestRun = run;
     }
     if (bestRun.length === 1 && cards.length === 5) {
+        const pairRanks = Object.keys(map).map(Number).filter(r => map[r] === 2);
+        if (pairRanks.length !== 1) return null;
         return {
             valid: true, type: SjCardType.THREE_WITH_TWO,
             headCount: 0, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,

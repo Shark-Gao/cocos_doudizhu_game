@@ -108,12 +108,12 @@ export class RoomPlayCard extends Component {
         try {
             const safeTargetCards = targetCards || [];
             const safeMyCards = myCards || [];
-            if (safeTargetCards.length <= 0) {
-                return safeMyCards.length > 0 ? [[safeMyCards[0]]] : [];
-            }
-            if (this.roomScene?.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
+            if (Number(this.roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN) {
                 const hint = cardHintShuangjian(safeTargetCards, safeMyCards);
                 return hint?.length > 0 ? [hint] : [];
+            }
+            if (safeTargetCards.length <= 0) {
+                return safeMyCards.length > 0 ? [[safeMyCards[0]]] : [];
             }
             return CardHint.cardHint(safeTargetCards, safeMyCards) || [];
         } catch (error) {

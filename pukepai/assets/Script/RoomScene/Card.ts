@@ -7,9 +7,13 @@
  * @LastEditors: sharkgao
  */
 import { _decorator, CCInteger, Component, Enum, instantiate, math, Node, Prefab, Quat, tween, UITransform, v2, v3, Widget } from 'cc';
+import { BUILD } from 'cc/env';
 import { CardItem } from './CardItem';
 import type { CardSelection } from './CardSelection';
 import { toRealCard } from '../../Utils/Tools';
+import { GameMode } from '../GameMode/IGameModeView';
+import { compareShuangjian, judgeCardTypeShuangjian, SjCardType } from '../GameMode/Shuangjian/ShuangjianCardHint';
+import type { SjJudgeResult } from '../GameMode/Shuangjian/ShuangjianCardHint';
 const { ccclass, property } = _decorator;
 
 // 定义一个枚举类型，包含下拉框的选项
@@ -72,10 +76,11 @@ export class Card extends Component {
     }
 
     public getMyCardSpacing() {
-        const cardCount = this.cardList.length;
-        if (cardCount <= 20) return 40;
-        if (cardCount <= 27) return 28;
-        return 24;
+        const cardCount = this.getMyDisplayCardList().length;
+        const buildSpacingOffset = BUILD ? 10 : 0;
+        if (cardCount <= 20) return 40 + buildSpacingOffset;
+        if (cardCount <= 27) return 36 + buildSpacingOffset;
+        return 40 + buildSpacingOffset;
     }
 
     private getTopCardSpacing() {
@@ -86,12 +91,107 @@ export class Card extends Component {
         return this.cardList.length > 20 ? 15 : 22;
     }
 
+    private getRank(cardIndex: number) {
+        const realCard = toRealCard(cardIndex);
+        if (realCard === 53 || realCard === 54) return realCard;
+        return (realCard - 1) % 13 + 1;
+    }
+
+    private isShuangjianMode() {
+        const roomScene = (this.node.getComponent('CardSelection') as CardSelection)?.roomScene;
+        return Number(roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN;
+    }
+
+    private is510KCombination(cards: number[]) {
+        if (cards.length < 3 || cards.length % 3 !== 0) return false;
+        const rankCounts: { [rank: number]: number } = {};
+        cards.forEach(card => {
+            const rank = this.getRank(card);
+            rankCounts[rank] = (rankCounts[rank] || 0) + 1;
+        });
+        const groupCount = cards.length / 3;
+        return rankCounts[5] === groupCount && rankCounts[10] === groupCount && rankCounts[13] === groupCount;
+    }
+
+    private getShuangjianGroupSortResult(cards: number[]): SjJudgeResult | null {
+        const result = judgeCardTypeShuangjian(cards);
+        if (!result.valid || result.type === SjCardType.FIVE_TEN_K || this.is510KCombination(cards)) return null;
+        if (result.type !== SjCardType.BOMB && result.type !== SjCardType.KING_BOMB) return null;
+        return result;
+    }
+
+    private collectShuangjianDisplayGroups() {
+        const groups: { cards: number[], result: SjJudgeResult, minIndex: number }[] = [];
+        const usedIndexes: { [index: number]: boolean } = {};
+        const rankMap: { [rank: number]: { card: number, index: number }[] } = {};
+
+        this.cardList.forEach((card, index) => {
+            const rank = this.getRank(card);
+            if (!rankMap[rank]) rankMap[rank] = [];
+            rankMap[rank].push({ card, index });
+        });
+
+        Object.keys(rankMap).forEach(rankKey => {
+            const rank = Number(rankKey);
+            const sameRankCards = rankMap[rank];
+            if ((rank === 53 || rank === 54) || sameRankCards.length < 4) return;
+            const cards = sameRankCards.map(item => item.card);
+            const result = this.getShuangjianGroupSortResult(cards);
+            if (!result) return;
+            groups.push({
+                cards,
+                result,
+                minIndex: Math.min(...sameRankCards.map(item => item.index)),
+            });
+            sameRankCards.forEach(item => usedIndexes[item.index] = true);
+        });
+
+        const kingCards = this.cardList
+            .map((card, index) => ({ card, index }))
+            .filter(item => {
+                const rank = this.getRank(item.card);
+                return rank === 53 || rank === 54;
+            });
+        if (kingCards.length >= 2) {
+            const cards = kingCards.map(item => item.card);
+            const result = this.getShuangjianGroupSortResult(cards);
+            if (result) {
+                groups.push({
+                    cards,
+                    result,
+                    minIndex: Math.min(...kingCards.map(item => item.index)),
+                });
+                kingCards.forEach(item => usedIndexes[item.index] = true);
+            }
+        }
+
+        return { groups, usedIndexes };
+    }
+
+    private getMyDisplayCardList() {
+        if (!this.isShuangjianMode()) return this.cardList;
+
+        const { groups, usedIndexes } = this.collectShuangjianDisplayGroups();
+        if (groups.length <= 0) return this.cardList;
+
+        groups.sort((a, b) => {
+            const compareResult = compareShuangjian(a.result, b.result);
+            if (compareResult !== 0) return compareResult;
+            return a.minIndex - b.minIndex;
+        });
+
+        const restCards = this.cardList.filter((_, index) => !usedIndexes[index]);
+        return groups.reduce((list, group) => list.concat(group.cards), []).concat(restCards);
+    }
+
     // 初始化我的牌, isDealCards：是否第一次发牌，第一次执行动画默认隐藏卡牌
     private initMyCard(isFirstInit) {
         // 每次渲染之前先删除掉之前渲染的卡牌
         this.node.removeAllChildren();
+        const displayCardList = this.getMyDisplayCardList();
+        this.cardList = displayCardList;
         const spacing = this.getMyCardSpacing();
-        this.cardList.forEach((cardNum, index) => {
+        displayCardList.forEach((cardNum, index) => {
             const card = instantiate(this.cardPrefab);
             console.log("渲染我的卡牌 isFirstInit", isFirstInit);
             // 设置卡片值 — toRealCard 把双剑第二副牌(>100)归一到 1..54
@@ -118,8 +218,28 @@ export class Card extends Component {
     // 卡牌重新排序
     private myCardSort(callback?) {
         console.log("还剩余", this.node.children.filter(child => child.isValid).length);
+        const displayCardList = this.getMyDisplayCardList();
+        this.cardList = displayCardList;
         const spacing = this.getMyCardSpacing();
-        this.node.children.filter(child => child.isValid).forEach((card, index) => {
+        const orderMap: { [cardIndex: number]: number[] } = {};
+        displayCardList.forEach((cardNum, index) => {
+            if (!orderMap[cardNum]) orderMap[cardNum] = [];
+            orderMap[cardNum].push(index);
+        });
+        const orderCursor: { [cardIndex: number]: number } = {};
+        const validCards = this.node.children.filter(child => child.isValid).map((card, originalIndex) => {
+            const cardIndex = card.getComponent(CardItem).cardIndex;
+            const cursor = orderCursor[cardIndex] || 0;
+            orderCursor[cardIndex] = cursor + 1;
+            return {
+                card,
+                originalIndex,
+                order: orderMap[cardIndex]?.[cursor] ?? originalIndex,
+            };
+        });
+        validCards.sort((a, b) => a.order - b.order);
+        validCards.forEach(({ card }, index) => {
+            card.setSiblingIndex(index);
             tween(card.getComponent(Widget)).to(0.2, {
                 left: index * spacing
             }).call(() => {
@@ -285,5 +405,3 @@ export class Card extends Component {
 
     }
 }
-
-

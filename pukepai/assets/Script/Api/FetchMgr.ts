@@ -55,6 +55,7 @@ class CustomFetch {
                         method: interceptedOptions.method,
                         data: JSON.parse(interceptedOptions.body),
                         header: interceptedOptions.headers,
+                        timeout: interceptedOptions.timeout || 30000,
                         success: (res) => {
                             console.log("wx请求成功", res)
                             resolve(res.data)
@@ -65,8 +66,13 @@ class CustomFetch {
             } else {
                 response = await fetch(this.baseUrl + url, interceptedOptions);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('请求失败:', error);
+            response = {
+                code: 400,
+                message: error?.errMsg?.includes('timeout') ? '请求超时，请稍后重试' : '网络请求失败',
+                error
+            };
         }
 
         // 执行响应拦截器

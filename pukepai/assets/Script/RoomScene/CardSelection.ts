@@ -239,7 +239,7 @@ export class CardSelection extends Component {
     }
 
     private isShuangjianMode() {
-        return this.roomScene?.roomInfo?.game_mode === GameMode.SHUANGJIAN;
+        return Number(this.roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN;
     }
 
     private isShuangjian510K(cardList: number[]) {
