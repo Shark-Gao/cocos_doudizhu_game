@@ -279,7 +279,8 @@ export function playCardAudio(cards) {
     const cardNum = Number(realCards[0]) % 13 == 0 ? 13 : Number(realCards[0]) % 13;
     return AudioType[`duizi_${cardNum}`];
   } else if (cardType.name == "Three") {
-    return AudioType.sanzhang;
+    const cardNum = Number(realCards[0]) % 13 == 0 ? 13 : Number(realCards[0]) % 13;
+    return AudioType[`sanzhang_${cardNum}`];
   } else if (cardType.name == "ThreeWithOne") {
     return AudioType.dai_3_1;
   } else if (cardType.name == "ThreeWithTwo") {

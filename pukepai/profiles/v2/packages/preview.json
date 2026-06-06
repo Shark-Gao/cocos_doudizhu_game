@@ -5,5 +5,7 @@
       "platform": "gameView"
     }
   },
-  "general": {}
+  "general": {
+    "start_scene": "721c61ab-6b08-4954-baa4-dd2c7d0d65e6"
+  }
 }

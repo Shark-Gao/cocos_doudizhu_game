@@ -3,7 +3,7 @@ import { CommonUIManager } from '../CommonUIManager';
 import { noLoadingPost, post } from '../Api/FetchMgr';
 import { Switch } from '../UI/Switch';
 import { AudioMgr } from '../AudioMgr';
-import { CONFIG } from '../Config';
+import { getRoomMusicAudio, RoomMusicAudio } from '../../Utils/constant';
 import { HallSceneMgr } from '../SceneScript/HallSceneMgr';
 const { ccclass, property } = _decorator;
 
@@ -142,7 +142,8 @@ export class Setting extends Component {
             CommonUIManager.inst.showToast("修改成功");
             this.BgAudioNode.getChildByName("Switch").getComponent(Switch).switchFun(audioStatus ? true : false)
             if (audioStatus) {
-                AudioMgr.inst.play(CONFIG.RESOURCE_BASE_URL + "/audios/bg.mp3", 1, true);
+                const music = director.getScene().name === 'HallScene' ? RoomMusicAudio.welcome : RoomMusicAudio.normal;
+                AudioMgr.inst.play(getRoomMusicAudio(music), 1, true, director.getScene().name);
             } else {
                 AudioMgr.inst.stop();
             }

@@ -6,6 +6,7 @@ import CardLogic from '../../Utils/cardLogic';
 import { AudioMgr } from '../AudioMgr';
 import { GameMode } from '../GameMode/IGameModeView';
 import { judgeCardTypeShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
+import { getRoomMainAudio, RoomMainAudio } from '../../Utils/constant';
 const { ccclass, property } = _decorator;
 @ccclass('CardSelection')
 export class CardSelection extends Component {
@@ -180,7 +181,7 @@ export class CardSelection extends Component {
 
         if (setColor == false) {
             // 执行选中音乐
-            AudioMgr.inst.playOneShot(this.SelectCardAudio);
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.select));
         }
 
         console.log("选中卡牌", this.preSelectedCards.map(item => item.getComponent(CardItem).cardNum))

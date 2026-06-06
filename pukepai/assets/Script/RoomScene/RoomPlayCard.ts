@@ -10,7 +10,7 @@ import { CommonUIManager } from '../CommonUIManager';
 import CardHint from '../../Utils/cardHint';
 import { GameOver } from './GameOver';
 import { AudioMgr } from '../AudioMgr';
-import { playAudios, audioPageageName } from '../../Utils/constant';
+import { getPlayAudio, getRoomMainAudio, getRoomMusicAudio, RoomMainAudio, RoomMusicAudio } from '../../Utils/constant';
 import { GameMode } from '../GameMode/IGameModeView';
 import { cardHintShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
 const { ccclass, property } = _decorator;
@@ -64,6 +64,10 @@ export class RoomPlayCard extends Component {
     firstGetPlayCardTimeDown: boolean = true;
     // 提示卡牌第几个
     hintCardNum: number = 0;
+    // 510K辅助选择第几个
+    fiveTenKHintNum: number = 0;
+    // 当前局是否已经切换到紧张背景音乐
+    private hasPlayedExcitingMusic: boolean = false;
 
     start() {
         try {
@@ -76,6 +80,10 @@ export class RoomPlayCard extends Component {
         console.log(this.roomScene);
         // 监听出牌倒计时器
         eventTarget.on("playCardTimer", this.onPlayCardTimer, this);
+        // 监听新局发牌，重置残局音乐状态
+        eventTarget.on("dealCards", this.onDealCards, this);
+        // 监听发牌动画结束，此时手牌可以手动选择
+        eventTarget.on("dealCardsAmt", this.onDealCardsAmt, this);
         // 取消托管监听
         eventTarget.on("cancelTrusteeship", this.onCancelTrusteeship, this);
         // 监听机器人出牌
@@ -86,22 +94,61 @@ export class RoomPlayCard extends Component {
         eventTarget.on("replaceLogin", this.onReplaceLogin, this);
         // 双剑专属：结算推送
         eventTarget.on("shuangjianGameOver", this.onShuangjianGameOver, this);
+        this.bindFiveTenKButton();
+        this.setFiveTenKButtonActive(false);
 
         // 测试提示方法
         // console.log("提示出牌", CardHint.cardHint([], [17, 17, 17, 4, 5, 6, 7, 8, 54]))
     }
 
+    private bindFiveTenKButton() {
+        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        if (!fiveTenKBtn) return;
+        const button = fiveTenKBtn.getComponent(Button);
+        if (!button) return;
+        fiveTenKBtn.off(Button.EventType.CLICK, this.selectFiveTenK, this);
+        fiveTenKBtn.on(Button.EventType.CLICK, this.selectFiveTenK, this);
+    }
+
+    private setFiveTenKButtonActive(active: boolean) {
+        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        if (!fiveTenKBtn) return;
+        const canManualSelectCard = this.myCardParentNode?.children?.some(card => card?.active) || false;
+        fiveTenKBtn.active = active && canManualSelectCard && Number(this.roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN;
+    }
+
     protected onDestroy(): void {
         eventTarget.off("playCardTimer", this.onPlayCardTimer, this);
+        eventTarget.off("dealCards", this.onDealCards, this);
+        eventTarget.off("dealCardsAmt", this.onDealCardsAmt, this);
         eventTarget.off("cancelTrusteeship", this.onCancelTrusteeship, this);
         eventTarget.off("robotPlay", this.onRobotPlay, this);
         eventTarget.off("userPlayCard", this.onUserPlayCard, this);
         eventTarget.off("replaceLogin", this.onReplaceLogin, this);
         eventTarget.off("shuangjianGameOver", this.onShuangjianGameOver, this);
+        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        fiveTenKBtn?.off(Button.EventType.CLICK, this.selectFiveTenK, this);
     }
 
     update(deltaTime: number) {
 
+    }
+
+    private tryPlayExcitingMusic(leftCardCount: number) {
+        if (!this.hasPlayedExcitingMusic && leftCardCount > 0 && leftCardCount <= 2) {
+            this.hasPlayedExcitingMusic = true;
+            AudioMgr.inst.play(getRoomMusicAudio(RoomMusicAudio.exciting), 1, true, director.getScene().name);
+        }
+    }
+
+    private onDealCards() {
+        this.hasPlayedExcitingMusic = false;
+        this.fiveTenKHintNum = 0;
+        this.setFiveTenKButtonActive(false);
+    }
+
+    private onDealCardsAmt() {
+        this.setFiveTenKButtonActive(true);
     }
 
     private getHintCards(targetCards: number[] = [], myCards: number[] = []) {
@@ -119,6 +166,24 @@ export class RoomPlayCard extends Component {
         } catch (error) {
             console.log("获取提示牌失败", error);
             return [];
+        }
+    }
+
+    private playRoomMainCardEffect(playCard: number[]): void {
+        const playCardAudioName = playCardAudio(playCard);
+        if (playCardAudioName === 'zhadan' || playCardAudioName === 'wangzha') {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.boom));
+        } else if (playCardAudioName === 'feiji') {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.plane));
+        } else if (playCard?.length > 0) {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.sendcard));
+        }
+    }
+
+    private playUserAudio(userId: any, audioName: string): void {
+        const audioUrl = getPlayAudio(audioName, this.roomScene?.roomInfo?.roomUsers?.[userId]);
+        if (audioUrl) {
+            AudioMgr.inst.playOneShot(audioUrl);
         }
     }
 
@@ -166,6 +231,7 @@ export class RoomPlayCard extends Component {
                         if (hintBtn) {
                             hintBtn.active = true;
                         }
+                        this.setFiveTenKButtonActive(true);
                         if (noPlayBtn) {
                             noPlayBtn.active = !!data.isYaPai;
                         }
@@ -200,7 +266,14 @@ export class RoomPlayCard extends Component {
                     findChildByNameRecursive(node, "TimeDown").active = true;
                     const timeDown = findChildByNameRecursive(node, "TimeDown");
                     timeDown.getChildByName('Str').getComponent(Label).string = data.downTime;
+                    if (nodeId == this.userInfo.user_id) {
+                        AudioMgr.inst.playOneShot(getRoomMainAudio(data.downTime <= 3 ? RoomMainAudio.remind : RoomMainAudio.ring));
+                    }
                 } else {
+                    if (nodeId == this.userInfo.user_id && data.downTime <= 0) {
+                        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.timeup));
+                        this.setFiveTenKButtonActive(false);
+                    }
                     // 隐藏出牌按钮
                     const SnatchLandlord = findChildByNameRecursive(node, "PlayHandBtn");
                     SnatchLandlord ? SnatchLandlord.active = false : null;
@@ -303,10 +376,12 @@ export class RoomPlayCard extends Component {
                             this.scheduleOnce(() => {
                                 // 删除已出卡牌
                                 myCardCom.cardList = myCardCom.cardList.filter((cardNum, index) => { return playCard.indexOf(cardNum) == -1 });
+                                this.tryPlayExcitingMusic(myCardCom.cardList.length);
                                 // 卡牌排序
                                 myCardCom.cardSort(() => {
                                     // 更新选中卡牌方法（出了一张牌，所以需要更新以下）
                                     myCardSelectionCom.initSelectCard();
+                                    this.setFiveTenKButtonActive(true);
                                 });
                             }, 0)
                         }
@@ -341,6 +416,7 @@ export class RoomPlayCard extends Component {
                             // 从头开始删除
                             cardCom.cardList = cardCom.cardList.slice(0 + playCard.length, cardCom.cardList.length);
                         }
+                        this.tryPlayExcitingMusic(cardCom.cardList.length);
                         cardCom.init();
                     }
 
@@ -402,6 +478,7 @@ export class RoomPlayCard extends Component {
      * @param type 1 不出 2 出牌
      */
     async userPlayCard(event, type) {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
         const selectCard = this.myCardParentNode.getComponent(CardSelection).getSelectCards() || [];
         console.log("selectCard", selectCard);
 
@@ -410,24 +487,118 @@ export class RoomPlayCard extends Component {
 
         // 选择卡牌为空
         if (type == 2 && selectCard.length == 0) {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.error_acl));
             return CommonUIManager.inst.showToast("请选择出牌");
         } else if (type == 1) {
             // 选中卡牌取消
             this.myCardParentNode.getComponent(CardSelection).noPlayCard();
         }
 
-        const socket = await WebsocketMgr.instance({ url: `/roomInfo?roomId=${sys.localStorage.getItem("joinRoomId")}&userId=${this.userInfo.user_id}` });
-        socket.send({
-            type: "userPlayCard",
-            params: {
-                roomId: sys.localStorage.getItem("joinRoomId"),
-                playCards: type == 1 ? [] : selectCard.map(item => item.cardIndex)
+        const playHandBtn = findChildByNameRecursive(this.myInfoNode, "PlayHandBtn");
+        const timeDown = findChildByNameRecursive(this.myInfoNode, "TimeDown");
+        const wasPlayHandBtnActive = !!playHandBtn?.active;
+        const wasTimeDownActive = !!timeDown?.active;
+        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        const wasFiveTenKBtnActive = !!fiveTenKBtn?.active;
+        if (playHandBtn) {
+            playHandBtn.active = false;
+        }
+        if (timeDown) {
+            timeDown.active = false;
+        }
+        this.setFiveTenKButtonActive(false);
+
+        try {
+            const socket = await WebsocketMgr.instance({ url: `/roomInfo?roomId=${sys.localStorage.getItem("joinRoomId")}&userId=${this.userInfo.user_id}` });
+            socket.send({
+                type: "userPlayCard",
+                params: {
+                    roomId: sys.localStorage.getItem("joinRoomId"),
+                    playCards: type == 1 ? [] : selectCard.map(item => item.cardIndex)
+                }
+            });
+        } catch (error) {
+            console.log("userPlayCard error", error);
+            if (playHandBtn) {
+                playHandBtn.active = wasPlayHandBtnActive;
             }
+            if (timeDown) {
+                timeDown.active = wasTimeDownActive;
+            }
+            if (fiveTenKBtn) {
+                fiveTenKBtn.active = wasFiveTenKBtnActive;
+            }
+            CommonUIManager.inst.showToast("操作失败，请重试");
+        }
+    }
+
+    private getCardRank(cardIndex: number) {
+        const realCard = toRealCard(cardIndex);
+        if (realCard === 53 || realCard === 54) return realCard;
+        return (realCard - 1) % 13 + 1;
+    }
+
+    private getCardSuit(cardIndex: number) {
+        const realCard = toRealCard(cardIndex);
+        if (realCard === 53 || realCard === 54) return 4;
+        return Math.ceil(realCard / 13) - 1;
+    }
+
+    private getFiveTenKHintCards(cardList: number[]) {
+        const rankCards: { [rank: number]: number[] } = {};
+        cardList.forEach(card => {
+            const rank = this.getCardRank(card);
+            if (!rankCards[rank]) {
+                rankCards[rank] = [];
+            }
+            rankCards[rank].push(card);
         });
+
+        const fives = rankCards[5] || [];
+        const tens = rankCards[10] || [];
+        const kings = rankCards[13] || [];
+        const result: number[][] = [];
+        fives.forEach(five => {
+            tens.forEach(ten => {
+                kings.forEach(king => {
+                    result.push([five, ten, king]);
+                });
+            });
+        });
+
+        return result.sort((a, b) => {
+            const aSuited = this.getCardSuit(a[0]) === this.getCardSuit(a[1]) && this.getCardSuit(a[1]) === this.getCardSuit(a[2]);
+            const bSuited = this.getCardSuit(b[0]) === this.getCardSuit(b[1]) && this.getCardSuit(b[1]) === this.getCardSuit(b[2]);
+            if (aSuited !== bSuited) return aSuited ? -1 : 1;
+            return Math.min(...a) - Math.min(...b);
+        });
+    }
+
+    // 510K辅助选牌
+    selectFiveTenK() {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
+        if (Number(this.roomScene?.roomInfo?.game_mode) !== GameMode.SHUANGJIAN) {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.alert));
+            return;
+        }
+
+        const myCards = this.myCardParentNode.getComponent(Card).cardList || [];
+        const fiveTenKList = this.getFiveTenKHintCards(myCards);
+        if (fiveTenKList.length <= 0) {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.alert));
+            return CommonUIManager.inst.showToast("没有可选的510K");
+        }
+
+        if (this.fiveTenKHintNum > fiveTenKList.length - 1) {
+            this.fiveTenKHintNum = 0;
+        }
+        this.myCardParentNode.getComponent(CardSelection).hintSelectCard(fiveTenKList[this.fiveTenKHintNum]);
+        this.fiveTenKHintNum++;
     }
 
     // 卡牌提示
     cardHint() {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
         // 查询最近一条的出牌记录
         const lastRecord = this.roomScene.getLastRecord();
         const myCardSelection = this.myCardParentNode.getComponent(CardSelection);
@@ -450,6 +621,8 @@ export class RoomPlayCard extends Component {
             this.myCardParentNode.getComponent(CardSelection).hintSelectCard(hintCardList[hintCardList.length - 1 - this.hintCardNum]);
             // 提示次数加1
             this.hintCardNum++;
+        } else {
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.alert));
         }
     }
 
@@ -476,22 +649,22 @@ export class RoomPlayCard extends Component {
             // 判断是否所有玩家都已经被托管了，都被托管的话，不播放出牌音乐了
             // if (data.isAllHosted == false) {
             if (data.playCard?.length <= 0) {
-                AudioMgr.inst.playOneShot(playAudios[audioPageageName]["buyao"]);
+                this.playUserAudio(data.userId, "buyao");
             } else {
                 // 出牌音频名称;
                 const playCardAudioName = playCardAudio(data.playCard);
                 // 播放音频
-                const audioUrl = playAudios[audioPageageName][playCardAudioName];
-                if (audioUrl) {
-                    AudioMgr.inst.playOneShot(audioUrl);
-                }
+                this.playUserAudio(data.userId, playCardAudioName);
             }
             // }
+
+            this.playRoomMainCardEffect(data.playCard);
 
             // 当前登录玩家机器人出牌后，重置第一次获取出牌倒计时状态，下次轮到自己出牌时，更新出牌按钮状态
             if (this.userInfo.user_id == data.userId) {
                 this.myCardParentNode.getComponent(CardSelection).setCurrentTurnIsYaPai(null);
                 this.firstGetPlayCardTimeDown = true;
+                this.setFiveTenKButtonActive(false);
             }
 
             // 判断游戏是否结束
@@ -519,14 +692,15 @@ export class RoomPlayCard extends Component {
                         playCardBox.addChild(instantiate(this.noPlayCards));
                     }
                 });
-                AudioMgr.inst.playOneShot(playAudios[audioPageageName]["buyao"]);
+                this.playUserAudio(data.userId, "buyao");
             } else {
                 // 渲染用户出的卡牌
                 this.playCardRender(data.playCard, data.userId);
                 // 出牌音频名称;
                 const playCardAudioName = playCardAudio(data.playCard);
                 // 播放音频
-                AudioMgr.inst.playOneShot(playAudios[audioPageageName][playCardAudioName]);
+                this.playUserAudio(data.userId, playCardAudioName);
+                this.playRoomMainCardEffect(data.playCard);
             }
 
             // 当前玩家出牌后
@@ -538,6 +712,7 @@ export class RoomPlayCard extends Component {
                 this.myCardParentNode.getComponent(CardSelection).setCurrentTurnIsYaPai(null);
                 // 重置首次获取出牌倒计时，下次轮到自己出牌时，更新出牌按钮状态
                 this.firstGetPlayCardTimeDown = true;
+                this.setFiveTenKButtonActive(false);
             }
 
             // 判断游戏是否结束
@@ -577,6 +752,7 @@ export class RoomPlayCard extends Component {
     gameOver({ gameOverData, roomUsers, victoryStatus }) {
         // 隐藏所有玩家倒计时，隐藏出牌按钮，隐藏机器人托管样式
         const userNodeId = this.roomScene.getUserNodeInfo()
+        this.setFiveTenKButtonActive(false);
 
         // 筛选需要明牌的用户卡牌节点（过滤当前玩家和已出完牌玩家和明牌玩家）
         const mingPaiAnimationUser = userNodeId.filter(item => item.nodeId != this.userInfo.user_id && roomUsers[item.nodeId].user_card.length > 0 && roomUsers[item.nodeId].mingpai == false) || [];
@@ -639,5 +815,3 @@ export class RoomPlayCard extends Component {
         console.log("mingPaiAnimationUser", mingPaiAnimationUser, mingPaiAnimationUser.length);
     }
 }
-
-

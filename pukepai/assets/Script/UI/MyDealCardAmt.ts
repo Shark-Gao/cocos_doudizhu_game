@@ -1,6 +1,7 @@
 import { _decorator, AudioClip, Component, Node, tween, Vec3 } from 'cc';
 import { eventTarget } from '../../Utils/EventListening';
 import { AudioMgr } from '../AudioMgr';
+import { getRoomMainAudio, RoomMainAudio } from '../../Utils/constant';
 const { ccclass, property } = _decorator;
 @ccclass('MyDealCardAmt')
 export class MyDealCardAmt extends Component {
@@ -59,14 +60,14 @@ export class MyDealCardAmt extends Component {
 
             this.scheduleOnce(() => {
                 // 发牌音频
-                AudioMgr.inst.playOneShot(this.fapaiAudio);
+                AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.givecard));
 
                 card.setPosition(0, 71, 0);
                 card.active = true;
 
                 // 发牌动画
                 tween(card)
-                    .to(0.5, { worldPosition: new Vec3(targetOpt.x + i * spacing + 50, targetOpt.y, targetOpt.z) }, {
+                    .to(0.35, { worldPosition: new Vec3(targetOpt.x + i * spacing + 50, targetOpt.y, targetOpt.z) }, {
                         easing: 'quartOut'
                     })
                     .call(() => {
@@ -79,7 +80,7 @@ export class MyDealCardAmt extends Component {
                         }
                     })
                     .start();
-            }, 0.15 * i);
+            }, 0.1 * i);
         }
     }
 }

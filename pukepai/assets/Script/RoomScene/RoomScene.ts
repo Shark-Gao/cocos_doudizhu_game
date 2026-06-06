@@ -13,7 +13,7 @@ import { CardItem } from './CardItem';
 import { CardSelection } from './CardSelection';
 import { CONFIG } from '../Config';
 import { AudioMgr } from '../AudioMgr';
-import { playAudios, audioPageageName, GameModel } from '../../Utils/constant';
+import { GameModel, getPlayAudio, getRoomMainAudio, getRoomMusicAudio, RoomMainAudio, RoomMusicAudio } from '../../Utils/constant';
 import { RoomPlayCard } from './RoomPlayCard';
 import Global from '../../Utils/Global';
 import { ShuangjianRoomLifecycle } from '../GameMode/ShuangjianRoomLifecycle';
@@ -151,8 +151,8 @@ export class RoomScene extends Component {
             this.share.active = true;
         }
 
-        // 站厅大厅音乐
-        AudioMgr.inst.stop();
+        // 房间等待阶段音乐
+        AudioMgr.inst.play(getRoomMusicAudio(RoomMusicAudio.normal), 1, true, director.getScene().name);
         // ui 兼容
         this.UI();
 
@@ -678,6 +678,7 @@ export class RoomScene extends Component {
 
     // 准备
     async ready() {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
         // 发送准备消息给服务端
         const socket = await WebsocketMgr.instance({ url: this.socketUrl });
         socket.send({
@@ -692,6 +693,7 @@ export class RoomScene extends Component {
     private onReady({ data, code }) {
         if (code == 200) {
             console.log("准备成功", data);
+            AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.start));
 
             // 渲染准备状态
             this.renderUserReady(data); // data 为房间信息
@@ -769,6 +771,7 @@ export class RoomScene extends Component {
             if (this.roomInfo?.game_mode === GameMode.SHUANGJIAN) {
                 this.bottomCardParent.active = false;
                 this.bottomCardAmtNode.active = false;
+                AudioMgr.inst.play(getRoomMusicAudio(RoomMusicAudio.normal2), 1, true, director.getScene().name);
             } else {
                 // 重置底牌动画到第一帧，为了重新播放
                 resetAnimationToFirstFrame(this.bottomCardAmtNode.getComponent(Animation));
@@ -837,7 +840,7 @@ export class RoomScene extends Component {
             const userNodeId = this.getUserNodeInfo();
 
             // data.userId 抢地主用户Id data,selectLandlord 抢地主选择
-            AudioMgr.inst.playOneShot(playAudios[audioPageageName][data.selectLandlord ? "qiangdizhu" : "buqiang"]);
+            this.playUserAudio(data.userId, data.selectLandlord ? "qiangdizhu" : "buqiang");
 
             // 展示抢地主图片
             userNodeId.forEach(({ nodeId, node }) => {
@@ -855,6 +858,7 @@ export class RoomScene extends Component {
 
     // 抢地主方法
     async selectLandlord(event, status) {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
         const socket = await WebsocketMgr.instance({ url: this.socketUrl });
         socket.send({
             type: "selectLandlord",
@@ -884,7 +888,13 @@ export class RoomScene extends Component {
                     const timeDown = findChildByNameRecursive(node, "TimeDown");
                     timeDown.active = true;
                     timeDown.getChildByName('Str').getComponent(Label).string = data.downTime;
+                    if (nodeId == this.userInfo.user_id) {
+                        AudioMgr.inst.playOneShot(getRoomMainAudio(data.downTime <= 3 ? RoomMainAudio.remind : RoomMainAudio.ring));
+                    }
                 } else {
+                    if (nodeId == this.userInfo.user_id && data.downTime <= 0) {
+                        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.timeup));
+                    }
                     // console.log(nodeId, "隐藏抢地主按钮", data.downTime)
                     // 隐藏抢地主按钮
                     const SnatchLandlord = findChildByNameRecursive(node, "SnatchLandlord");
@@ -968,10 +978,12 @@ export class RoomScene extends Component {
         }
         this.bottomCardParent.active = true;
         this.bottomCardAmtNode.active = false;
+        AudioMgr.inst.play(getRoomMusicAudio(RoomMusicAudio.normal2), 1, true, director.getScene().name);
     }
 
     // 玩家明牌
     async mingpai() {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
         const socket = await WebsocketMgr.instance({ url: this.socketUrl });
         socket.send({
             type: "mingPai",
@@ -1045,12 +1057,13 @@ export class RoomScene extends Component {
             // 明牌后重新渲染服务端下发的玩家手牌；roomUsers 为全员，roomUser 兼容旧的单人数据。
             this.renderCard(revealUsers);
             // 明牌音频
-            AudioMgr.inst.playOneShot(playAudios[audioPageageName]["mingpai"]);
+            this.playUserAudio(data.userId, "mingpai");
         }
     }
 
     // 选择加倍
     async selectDouble(event, status) {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
         const socket = await WebsocketMgr.instance({ url: this.socketUrl });
         socket.send({
             type: "selectDouble",
@@ -1076,7 +1089,10 @@ export class RoomScene extends Component {
                             // 默认展示不加倍
                             findChildByNameRecursive(node, "NoDoubleRes").active = true;
                             // 播放不加倍音乐
-                            AudioMgr.inst.playOneShot(playAudios[audioPageageName]["bujiabei"]);
+                            this.playUserAudio(userId, "bujiabei");
+                            if (nodeId == this.userInfo.user_id) {
+                                AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.timeup));
+                            }
                         }
 
                         // 该用户已经选择过加倍了 或 加倍倒计时结束了
@@ -1090,6 +1106,9 @@ export class RoomScene extends Component {
                             // 展示加倍倒计时
                             findChildByNameRecursive(node, "TimeDown").active = true;
                             findChildByNameRecursive(node, "TimeDown").getChildByName('Str').getComponent(Label).string = data.downTime;
+                            if (nodeId == this.userInfo.user_id) {
+                                AudioMgr.inst.playOneShot(getRoomMainAudio(data.downTime <= 3 ? RoomMainAudio.remind : RoomMainAudio.ring));
+                            }
                         }
                     }
                 })
@@ -1121,21 +1140,21 @@ export class RoomScene extends Component {
                         findChildByNameRecursive(node, "NoDoubleRes").active = true;
                     }
                     // 不加倍音频
-                    AudioMgr.inst.playOneShot(playAudios[audioPageageName]["bujiabei"]);
+                    this.playUserAudio(data.selectUserId, "bujiabei");
                 } else if (data.redouble_status == 2) {
                     if (data.selectUserId == nodeId) {
                         // 展示加倍
                         findChildByNameRecursive(node, "DoubleRes").active = true;
                     }
                     // 加倍音频
-                    AudioMgr.inst.playOneShot(playAudios[audioPageageName]["jiabei"]);
+                    this.playUserAudio(data.selectUserId, "jiabei");
                 } else if (data.redouble_status == 3) {
                     if (data.selectUserId == nodeId) {
                         // 展示超级加倍
                         findChildByNameRecursive(node, "SuperDoubleRes").active = true;
                     }
                     // 超级加倍音频
-                    AudioMgr.inst.playOneShot(playAudios[audioPageageName]["chaojijiabei"]);
+                    this.playUserAudio(data.selectUserId, "chaojijiabei");
                 }
             })
 
@@ -1214,6 +1233,50 @@ export class RoomScene extends Component {
         // 关闭连接
         WebsocketMgr.close();
     }
+
+    private refreshPlayerPositions(): any[] {
+        // 这个数组顺序很重要不能调整，是根据出牌顺序有关系的
+        const UserNodeId: any[] = [
+            {
+                node: this.myInfoNode, // 存放我的信息节点（包含用户信息、卡牌信息等）
+                nodeId: this.myInfoNode.getComponent(CardBox).userId, // 节点上绑定的用户id
+                cardParentNode: this.myCardParentNode, // 存放卡牌的父节点
+                cardNodeName: "my",
+            },
+            {
+                node: this.user2Info,
+                nodeId: this.user2Info.getComponent(CardBox).userId,
+                cardParentNode: this.user2CardParent,
+                cardNodeName: "rightUser",
+            },
+        ];
+        // 双剑 4 人席：在逆时针顺序中插入对面顶部玩家（我 → 右手 → 对面 → 左手）
+        if (this.user3Info && this.user3CardParent && this.user3Info.activeInHierarchy) {
+            UserNodeId.push({
+                node: this.user3Info,
+                nodeId: this.user3Info.getComponent(CardBox).userId,
+                cardParentNode: this.user3CardParent,
+                cardNodeName: "topUser",
+            });
+        }
+        UserNodeId.push({
+            node: this.user1Info,
+            nodeId: this.user1Info.getComponent(CardBox).userId,
+            cardParentNode: this.user1CardParent,
+            cardNodeName: "leftUser",
+        });
+
+        return UserNodeId;
+    }
+
+    private getUserPlayAudio(userId: any, audioName: string): string {
+        return getPlayAudio(audioName, this.roomInfo?.roomUsers?.[userId]);
+    }
+
+    private playUserAudio(userId: any, audioName: string): void {
+        const audioUrl = this.getUserPlayAudio(userId, audioName);
+        if (audioUrl) {
+            AudioMgr.inst.playOneShot(audioUrl);
+        }
+    }
 }
-
-

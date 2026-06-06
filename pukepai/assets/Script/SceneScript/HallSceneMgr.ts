@@ -10,6 +10,7 @@ import { ConfirmPopUp } from '../UI/ConfirmPopUp';
 import { CONFIG } from '../Config';
 import { AudioMgr } from '../AudioMgr';
 import Global from '../../Utils/Global'
+import { getRoomMusicAudio, RoomMusicAudio } from '../../Utils/constant';
 import { getHallStrategy, SpecialRules } from '../GameMode/IHallModeStrategy';
 const { ccclass, property } = _decorator;
 
@@ -344,8 +345,7 @@ export class HallSceneMgr extends Component {
             }
 
             if (res.data.bg_audio === 1 && updataUserInfo == false) {
-                // 加载远程音频
-                AudioMgr.inst.play(CONFIG.RESOURCE_BASE_URL + "/audios/bg.mp3", 1, true, director.getScene().name);
+                AudioMgr.inst.play(getRoomMusicAudio(RoomMusicAudio.welcome), 1, true, director.getScene().name);
             }
         }
         console.log(res);
@@ -420,25 +420,32 @@ export class HallSceneMgr extends Component {
         if (this.createRoomType == CreateRoomType.CreateRoom) {
             this.createRoom(event, level)
         } else {
+            CommonUIManager.inst.showLoading("进入房间中...");
             this.matchRoom()
         }
     }
 
     // 匹配房间
     async matchRoom() {
-        // 获取当前选择的玩法类型
-        const gameMode = this.getSelectedGameMode();
-        const strategy = getHallStrategy(gameMode);
-        const payload = strategy.buildPayload(this.selectLevelNum, this.specialRules, this.selectedRobotCount, this.selectedRobotLevel);
-        console.log("matchRoom payload", payload);
+        try {
+            // 获取当前选择的玩法类型
+            const gameMode = this.getSelectedGameMode();
+            const strategy = getHallStrategy(gameMode);
+            const payload = strategy.buildPayload(this.selectLevelNum, this.specialRules, this.selectedRobotCount, this.selectedRobotLevel);
+            console.log("matchRoom payload", payload);
 
-        // await 等待连接成功返回
-        const socketInstance = await WebsocketMgr.instance({ url: "/matching" });
+            // await 等待连接成功返回
+            const socketInstance = await WebsocketMgr.instance({ url: "/matching" });
 
-        socketInstance.send({
-            type: "match",
-            params: payload,
-        });
+            socketInstance.send({
+                type: "match",
+                params: payload,
+            });
+        } catch (error) {
+            CommonUIManager.inst.hideLoading();
+            console.log("matchRoom error", error);
+            CommonUIManager.inst.showToast("进入房间失败，请重试");
+        }
     }
 
     // 监听匹配结果
@@ -453,11 +460,14 @@ export class HallSceneMgr extends Component {
                     director.loadScene('RoomScene');
                 }, 0)
             } else {
+                CommonUIManager.inst.hideLoading();
                 // 隐藏选择房间等级弹窗
                 this.selectLevelHide();
                 // 展示匹配中弹窗
                 this.matchLoadingShow();
             }
+        } else {
+            CommonUIManager.inst.hideLoading();
         }
     }
 

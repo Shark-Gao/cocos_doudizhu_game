@@ -2,7 +2,7 @@ import { _decorator, Component, Label, Node, Color, resources, SpriteFrame, Spri
 import { findChildByNameRecursive, loadRemoteImg } from '../../Utils/Tools';
 import { RoundBox } from '../UI/RoundBox';
 import { AudioMgr } from '../AudioMgr';
-import { gameOverSuccessAudio, gameOverLoseAudio } from '../../Utils/constant';
+import { getRoomMainAudio, RoomMainAudio } from '../../Utils/constant';
 const { ccclass, property } = _decorator;
 
 @ccclass('GameOver')
@@ -66,7 +66,7 @@ export class GameOver extends Component {
             })
 
             // 游戏结束音乐
-            AudioMgr.inst.playOneShot(victoryStatus == 1 ? gameOverSuccessAudio : gameOverLoseAudio);
+            AudioMgr.inst.playOneShot(getRoomMainAudio(victoryStatus == 1 ? RoomMainAudio.win : RoomMainAudio.lose));
         });
     }
 
