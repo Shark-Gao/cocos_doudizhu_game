@@ -1,7 +1,9 @@
+import { CONFIG } from "../Script/Config";
+
 // 甜美女生音频地址
 const sweetGirlAudio = "RoomAudio/girlv1/";
 const roomMainV1Audio = "RoomAudio/RoomMainV1/";
-const roomMusicV1Audio = "RoomAudio/musicV1/";
+const roomMusicV1Audio = `${CONFIG.RESOURCE_BASE_URL}/RoomAudio/musicV1/`;
 // 当前用户使用的音频包名，后期如果想做多个的话可以修改
 export const audioPageageName = "sweetGirlAudio";
 export const defaultAudioPackageName = audioPageageName;
@@ -120,15 +122,15 @@ export function getRoomMainAudio(audio: RoomMainAudio): string {
 export enum RoomMusicAudio {
   welcome = "Welcome",
   normal = "Normal",
-  normal2 = "Normal2",
+  normal2 = "Normal",
   exciting = "Exciting",
 }
 
 export const roomMusicAudios: Record<RoomMusicAudio, string> = {
-  [RoomMusicAudio.welcome]: roomMusicV1Audio + RoomMusicAudio.welcome,
-  [RoomMusicAudio.normal]: roomMusicV1Audio + RoomMusicAudio.normal,
-  [RoomMusicAudio.normal2]: roomMusicV1Audio + RoomMusicAudio.normal2,
-  [RoomMusicAudio.exciting]: roomMusicV1Audio + RoomMusicAudio.exciting,
+  [RoomMusicAudio.welcome]: roomMusicV1Audio + RoomMusicAudio.welcome + ".mp3",
+  [RoomMusicAudio.normal]: roomMusicV1Audio + RoomMusicAudio.normal + ".mp3",
+  // [RoomMusicAudio.normal2]: roomMusicV1Audio + RoomMusicAudio.normal2 + ".mp3",
+  [RoomMusicAudio.exciting]: roomMusicV1Audio + RoomMusicAudio.exciting + ".mp3",
 };
 
 export function getRoomMusicAudio(audio: RoomMusicAudio): string {

@@ -31,7 +31,12 @@
         "uuid": "721c61ab-6b08-4954-baa4-dd2c7d0d65e6"
       }
     ],
-    "startScene": "721c61ab-6b08-4954-baa4-dd2c7d0d65e6"
+    "startScene": "721c61ab-6b08-4954-baa4-dd2c7d0d65e6",
+    "overwriteProjectSettings": {
+      "macroConfig": {
+        "cleanupImageCache": "off"
+      }
+    }
   },
   "BuildTaskManager": {
     "taskMap": {
@@ -41,8 +46,8 @@
         "progress": 1,
         "state": "success",
         "stage": "build",
-        "message": "2026-6-7 03:06:42 build success in 12 s!",
-        "detailMessage": "builder:build-project-total (11953ms)\r",
+        "message": "2026-6-7 03:51:02 build success in 10 s!",
+        "detailMessage": "// ---- build task wechatgame：onAfterBuild ----\r",
         "options": {
           "name": "pukepai",
           "server": "",
@@ -106,7 +111,7 @@
           "__version__": "1.3.9",
           "logDest": "project://temp/builder/log/wechatgame2025-6-11 17-34.log"
         },
-        "time": "2026-6-7 03:06:29",
+        "time": "2026-6-7 03:50:51",
         "dirty": false
       }
     }

@@ -42,6 +42,12 @@ export class AudioMgr {
         return this._audioSource;
     }
 
+    private getAudioExt(url: string) {
+        const cleanUrl = url.split('?')[0].split('#')[0];
+        const extMatch = cleanUrl.match(/\.[^./]+$/);
+        return extMatch ? extMatch[0] : '.mp3';
+    }
+
     /**
      * @en
      * play short audio, such as strikes,explosions
@@ -93,7 +99,7 @@ export class AudioMgr {
             this.audioSource.volume = volume;
             this._audioSource.play();
         } else if (sound?.startsWith('http')) { // 网络音频资源加载
-            assetManager.loadRemote(sound, (err, audioClip: AudioClip) => {
+            assetManager.loadRemote(sound, { ext: this.getAudioExt(sound) }, (err, audioClip: AudioClip) => {
                 // play audio clip
                 if (err) {
                     console.log("音频加载失败", err);
