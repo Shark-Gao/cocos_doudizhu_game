@@ -319,7 +319,8 @@ export function compareShuangjian(previous: SjJudgeResult, current: SjJudgeResul
     const wc = categoryWeight(current);
     if (wc !== wp) return wc - wp;
     if (previous.type !== current.type) return -1;
-    if (previous.cards.length !== current.cards.length) return -1;
+    // 三带二允许最后一手不带够，按三张主体大小比较即可。
+    if (previous.type !== SjCardType.THREE_WITH_TWO && previous.cards.length !== current.cards.length) return -1;
     return current.mainRank - previous.mainRank;
 }
 
