@@ -123,7 +123,7 @@ export class HallSceneMgr extends Component {
     selectLevelNum: any = 0; // 选择等级
     matchTimer: number = 0; // 匹配时间
     wxLaunchOptions: any = {}; // 微信启动参数
-    selectedGameMode: GameMode = GameMode.Doudizhu; // 默认斗地主玩法
+    selectedGameMode: GameMode = GameMode.Shuangjian; // 默认双剑玩法
     selectedRobotCount: number = 0;
     selectedRobotLevel: RobotLevel = RobotLevel.Easy;
     private robotCountDropdownReady: boolean = false;
