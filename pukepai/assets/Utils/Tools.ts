@@ -2,6 +2,7 @@ import { _decorator, Animation, AssetManager, assetManager, director, find, Imag
 import { RoundBox } from '../Script/UI/RoundBox';
 import { AudioType } from './constant';
 import CardLogic from './cardLogic';
+import { judgeCardTypeShuangjian, SjCardType } from '../Script/GameMode/Shuangjian/ShuangjianCardHint';
 
 /**
  * Collapse a card id so the same logic works for both Doudizhu (1..54) and
@@ -37,12 +38,16 @@ export const loadRemoteImg = (url: string, node: Node, ext = ".jpg") => {
 }
 
 // 递归获取子节点
-export const findChildByNameRecursive = (parent: Node, name: string): Node => {
+export const findChildByNameRecursive = (parent: Node | null | undefined, name: string): Node | null => {
+  if (!parent?.isValid || !name) {
+    return null;
+  }
   if (parent.name === name) {
     return parent;
   }
-  for (let i = 0; i < parent.children.length; i++) {
-    const child = parent.children[i];
+  const children = parent.children || [];
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
     const result = findChildByNameRecursive(child, name);
     if (result) {
       return result;
@@ -259,13 +264,31 @@ export function timestampToDateTime(timestamp) {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+function getFallbackBombAudio(cards: any[]): string {
+  const judgeResult = judgeCardTypeShuangjian(cards.map(card => Number(card)));
+  if (!judgeResult?.valid) return "";
+
+  if (judgeResult.type === SjCardType.KING_BOMB && judgeResult.kingCount === 2) {
+    return AudioType.wangzha;
+  }
+
+  if (
+    judgeResult.type === SjCardType.BOMB ||
+    judgeResult.type === SjCardType.FIVE_TEN_K ||
+    judgeResult.type === SjCardType.KING_BOMB
+  ) {
+    return AudioType.zhadan;
+  }
+
+  return "";
+}
+
 // 出牌类型判断，转音频名称
 export function playCardAudio(cards) {
   if (cards?.length <= 0) return;
   const realCards = cards.map(card => toRealCard(card));
-  if (realCards.length === 2 && realCards.includes(53) && realCards.includes(54)) {
-    return AudioType.wangzha;
-  }
+  const fallbackBombAudio = getFallbackBombAudio(cards);
+  if (fallbackBombAudio) return fallbackBombAudio;
 
   const cardType = CardLogic.judgeCardType(realCards);
   if (!cardType?.name) return;

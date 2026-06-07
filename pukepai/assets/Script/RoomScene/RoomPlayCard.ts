@@ -101,8 +101,12 @@ export class RoomPlayCard extends Component {
         // console.log("提示出牌", CardHint.cardHint([], [17, 17, 17, 4, 5, 6, 7, 8, 54]))
     }
 
+    private getFiveTenKButton(): Node | null {
+        return findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+    }
+
     private bindFiveTenKButton() {
-        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        const fiveTenKBtn = this.getFiveTenKButton();
         if (!fiveTenKBtn) return;
         const button = fiveTenKBtn.getComponent(Button);
         if (!button) return;
@@ -111,7 +115,7 @@ export class RoomPlayCard extends Component {
     }
 
     private setFiveTenKButtonActive(active: boolean) {
-        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        const fiveTenKBtn = this.getFiveTenKButton();
         if (!fiveTenKBtn) return;
         const canManualSelectCard = this.myCardParentNode?.children?.some(card => card?.active) || false;
         fiveTenKBtn.active = active && canManualSelectCard && Number(this.roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN;
@@ -126,8 +130,7 @@ export class RoomPlayCard extends Component {
         eventTarget.off("userPlayCard", this.onUserPlayCard, this);
         eventTarget.off("replaceLogin", this.onReplaceLogin, this);
         eventTarget.off("shuangjianGameOver", this.onShuangjianGameOver, this);
-        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
-        fiveTenKBtn?.off(Button.EventType.CLICK, this.selectFiveTenK, this);
+        this.getFiveTenKButton()?.off(Button.EventType.CLICK, this.selectFiveTenK, this);
     }
 
     update(deltaTime: number) {
@@ -169,6 +172,10 @@ export class RoomPlayCard extends Component {
         }
     }
 
+    private isSameUserId(a: any, b: any): boolean {
+        return String(a ?? '') === String(b ?? '');
+    }
+
     private playRoomMainCardEffect(playCard: number[]): void {
         if (playCard?.length <= 0) return;
 
@@ -186,6 +193,26 @@ export class RoomPlayCard extends Component {
         if (audioUrl) {
             AudioMgr.inst.playOneShot(audioUrl);
         }
+    }
+
+    private showFinishedUserPlayCardState(userId: any): void {
+        if (!userId) return;
+        const userNodeId = this.roomScene.getUserNodeInfo();
+        userNodeId.forEach(({ nodeId, node }) => {
+            if (this.isSameUserId(nodeId, userId)) {
+                const playCardBox = node.getChildByName("PlayCardBox");
+                playCardBox.removeAllChildren();
+                const finishedTip = new Node("FinishedTip");
+                const transform = finishedTip.addComponent(UITransform);
+                transform.setContentSize(120, 40);
+                const label = finishedTip.addComponent(Label);
+                label.string = "牌已出完";
+                label.fontSize = 24;
+                label.lineHeight = 32;
+                label.color = new Color(255, 255, 255, 255);
+                playCardBox.addChild(finishedTip);
+            }
+        });
     }
 
     // 监听被挤掉线
@@ -208,6 +235,10 @@ export class RoomPlayCard extends Component {
             // 轮到我出牌了，删除上次出牌记录
             if (data.userId == this.userInfo.user_id) {
                 this.myInfoNode.getChildByName("PlayCardBox").removeAllChildren();
+            }
+
+            if (!data.isYaPai && data.finishedUserId) {
+                this.showFinishedUserPlayCardState(data.finishedUserId);
             }
 
             userNodeId.forEach(async ({ nodeId, node }) => {
@@ -499,7 +530,7 @@ export class RoomPlayCard extends Component {
         const timeDown = findChildByNameRecursive(this.myInfoNode, "TimeDown");
         const wasPlayHandBtnActive = !!playHandBtn?.active;
         const wasTimeDownActive = !!timeDown?.active;
-        const fiveTenKBtn = findChildByNameRecursive(this.myInfoNode, "510K") || findChildByNameRecursive(this.node, "510K");
+        const fiveTenKBtn = this.getFiveTenKButton();
         const wasFiveTenKBtnActive = !!fiveTenKBtn?.active;
         if (playHandBtn) {
             playHandBtn.active = false;
@@ -737,7 +768,7 @@ export class RoomPlayCard extends Component {
         const winners = (data?.winners || []).slice();
         const losers = (data?.losers || []).slice();
         const gameOverData = [...winners, ...losers];
-        const myIsWinner = winners.some(w => w.user_id === this.userInfo.user_id);
+        const myIsWinner = winners.some(w => this.isSameUserId(w.user_id ?? w.userId, this.userInfo.user_id));
         const victoryStatus = myIsWinner ? 1 : 2;
         if (gameOverData.length > 3) {
             console.log('[Shuangjian] gameOver 4-player extras (UI not yet rendered):', gameOverData[3]);

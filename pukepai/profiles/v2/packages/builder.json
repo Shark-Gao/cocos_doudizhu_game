@@ -46,7 +46,7 @@
         "progress": 1,
         "state": "success",
         "stage": "build",
-        "message": "2026-6-7 03:51:02 build success in 10 s!",
+        "message": "2026-6-7 10:40:08 build success in 11 s!",
         "detailMessage": "// ---- build task wechatgame：onAfterBuild ----\r",
         "options": {
           "name": "pukepai",
@@ -111,7 +111,7 @@
           "__version__": "1.3.9",
           "logDest": "project://temp/builder/log/wechatgame2025-6-11 17-34.log"
         },
-        "time": "2026-6-7 03:50:51",
+        "time": "2026-6-7 10:39:57",
         "dirty": false
       }
     }

@@ -114,10 +114,16 @@ export class LoginSceneMgr extends Component {
     // 微信登录
     public WxLogin() {
         console.log("login");
-        if (window.wx) {
-            wx.login({
-                timeout: "6000",
-                success: async (res) => {
+        if (!window.wx) {
+            this.toast("不是微信环境，无法使用微信登录");
+            return;
+        }
+
+        CommonUIManager.inst.showLoading("登录中");
+        wx.login({
+            timeout: "6000",
+            success: async (res) => {
+                try {
                     console.log(res);
                     // 调用接口获取openid
                     let response = await post("/codeGetOpenId", {
@@ -159,6 +165,7 @@ export class LoginSceneMgr extends Component {
                                 },
                                 fail: (err) => {
                                     console.log("Error: ", err);
+                                    CommonUIManager.inst.hideLoading();
                                     this.toast("微信授权失败");
                                 },
                             })
@@ -166,12 +173,18 @@ export class LoginSceneMgr extends Component {
                     } else {
                         this.toast(response.message || "获取openid失败");
                     }
-                },
-                fail: (err) => {
-                    console.log(err);
-                },
-            });
-        }
+                } catch (err) {
+                    console.log("WxLogin Error: ", err);
+                    CommonUIManager.inst.hideLoading();
+                    this.toast("微信登录失败");
+                }
+            },
+            fail: (err) => {
+                console.log(err);
+                CommonUIManager.inst.hideLoading();
+                this.toast("微信登录失败");
+            },
+        });
     }
 }
 
