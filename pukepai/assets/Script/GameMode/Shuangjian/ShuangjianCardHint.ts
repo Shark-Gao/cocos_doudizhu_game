@@ -61,11 +61,46 @@ function countByRank(cards: number[]): { [k: number]: number } {
     return map;
 }
 
+function collectFiveTenKCandidates(byRank: { [r: number]: number[] }): number[][] {
+    const fives = (byRank[5] || []).slice();
+    const tens = (byRank[10] || []).slice();
+    const kings = (byRank[13] || []).slice();
+    const count = Math.min(fives.length, tens.length, kings.length);
+    const candidates: number[][] = [];
+    for (let i = 1; i <= count; i++) {
+        if (i === 2) continue;
+        candidates.push(fives.slice(0, i).concat(tens.slice(0, i), kings.slice(0, i)));
+    }
+    return candidates;
+}
+
+function playMainRank(rank: number): number {
+    return rank === 1 ? 14 : (rank === 2 ? 15 : rank);
+}
+
 const INVALID: SjJudgeResult = {
     valid: false, type: SjCardType.INVALID,
     headCount: 0, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,
     mainRank: 0, cards: [],
 };
+
+export function judgeLastHandShortTripleShuangjian(cards: number[]): SjJudgeResult {
+    if (!cards || (cards.length !== 3 && cards.length !== 4)) return INVALID;
+    const map = countByRank(cards);
+    const tripleRank = Object.keys(map).map(Number)
+        .find(rank => rank !== 53 && rank !== 54 && map[rank] >= 3);
+    if (!tripleRank) return INVALID;
+    return {
+        valid: true,
+        type: SjCardType.THREE_WITH_TWO,
+        headCount: 0,
+        kingCount: 0,
+        fiveTenKCount: 0,
+        fiveTenKSuited: false,
+        mainRank: playMainRank(tripleRank),
+        cards: cards.slice(),
+    };
+}
 
 function detect510K(cards: number[]): { valid: boolean; suited: boolean } {
     if (cards.length !== 3) return { valid: false, suited: false };
@@ -111,7 +146,7 @@ function detectBombOrKingBomb(cards: number[]): SjJudgeResult | null {
         return {
             valid: true, type: SjCardType.BOMB,
             headCount: cards.length, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,
-            mainRank: r === 1 ? 14 : (r === 2 ? 15 : r),
+            mainRank: playMainRank(r),
             cards: cards.slice(),
         };
     }
@@ -178,7 +213,7 @@ function detectThreeWithTwoOrPlane(cards: number[]): SjJudgeResult | null {
         return {
             valid: true, type: SjCardType.THREE_WITH_TWO,
             headCount: 0, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,
-            mainRank: bestRun[0] === 1 ? 14 : (bestRun[0] === 2 ? 15 : bestRun[0]),
+            mainRank: playMainRank(bestRun[0]),
             cards: cards.slice(),
         };
     }
@@ -189,7 +224,7 @@ function detectThreeWithTwoOrPlane(cards: number[]): SjJudgeResult | null {
             return {
                 valid: true, type: SjCardType.PLANE,
                 headCount: 0, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,
-                mainRank: bestRun[0] === 1 ? 14 : (bestRun[0] === 2 ? 15 : bestRun[0]),
+                mainRank: playMainRank(bestRun[0]),
                 cards: cards.slice(),
             };
         }
@@ -239,7 +274,7 @@ export function judgeCardTypeShuangjian(cards: number[]): SjJudgeResult {
             return {
                 valid: true, type: SjCardType.PAIR,
                 headCount: 0, kingCount: 0, fiveTenKCount: 0, fiveTenKSuited: false,
-                mainRank: r0 === 1 ? 14 : (r0 === 2 ? 15 : r0),
+                mainRank: playMainRank(r0),
                 cards: cards.slice(),
             };
         }
@@ -304,7 +339,7 @@ export function cardHintShuangjian(targetCards: number[], myCards: number[]): nu
     if (!targetJ) {
         const orderedSmallToBig = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2, 53, 54];
         for (const r of orderedSmallToBig) {
-            if (byRank[r] && byRank[r].length > 0) return [byRank[r][0]];
+            if (byRank[r] && byRank[r].length === 1) return [byRank[r][0]];
         }
         return [];
     }
@@ -312,16 +347,22 @@ export function cardHintShuangjian(targetCards: number[], myCards: number[]): nu
         const order = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2, 53, 54];
         for (const r of order) {
             const myRank = r === 1 ? 14 : (r === 2 ? 15 : (r === 53 ? 16 : (r === 54 ? 17 : r)));
-            if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length > 0) return [byRank[r][0]];
+            if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length === 1) return [byRank[r][0]];
         }
     } else if (targetJ.type === SjCardType.PAIR) {
         const order = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2];
         for (const r of order) {
             const myRank = r === 1 ? 14 : (r === 2 ? 15 : r);
-            if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length >= 2) {
+            if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length === 2) {
                 return byRank[r].slice(0, 2);
             }
         }
+    }
+    const fiveTenKCandidates = collectFiveTenKCandidates(byRank)
+        .sort((a, b) => categoryWeight(judgeCardTypeShuangjian(a)) - categoryWeight(judgeCardTypeShuangjian(b)) || a.length - b.length);
+    for (const candidate of fiveTenKCandidates) {
+        const cj = judgeCardTypeShuangjian(candidate);
+        if (compareShuangjian(targetJ, cj) > 0) return candidate;
     }
     const bombRanks = Object.keys(byRank).map(Number)
         .filter(r => byRank[r].length >= 4 && r !== 53 && r !== 54);
@@ -332,7 +373,7 @@ export function cardHintShuangjian(targetCards: number[], myCards: number[]): nu
             return ra - rb;
         });
         for (const r of bombRanks) {
-            const candidate = byRank[r].slice(0, 4);
+            const candidate = byRank[r].slice();
             const cj = judgeCardTypeShuangjian(candidate);
             if (compareShuangjian(targetJ, cj) > 0) return candidate;
         }

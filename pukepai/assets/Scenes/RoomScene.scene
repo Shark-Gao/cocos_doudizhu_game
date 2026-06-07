@@ -232,7 +232,7 @@
     "_priority": 1073741824,
     "_fov": 45,
     "_fovAxis": 0,
-    "_orthoHeight": 432.30297219558963,
+    "_orthoHeight": 375,
     "_near": 1,
     "_far": 2000,
     "_color": {
@@ -18931,7 +18931,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 10.55999755859375,
+      "width": 13.0107421875,
       "height": 53.4
     },
     "_anchorPoint": {
@@ -20399,7 +20399,7 @@
       }
     ],
     "_interactable": true,
-    "_transition": 0,
+    "_transition": 3,
     "_normalColor": {
       "__type__": "cc.Color",
       "r": 255,
@@ -29503,7 +29503,7 @@
     },
     "component": "",
     "_componentId": "829f9ksaTVFlJR4dVKb6n06",
-    "handler": "mingpai",
+    "handler": "testMingPai",
     "customEventData": ""
   },
   {

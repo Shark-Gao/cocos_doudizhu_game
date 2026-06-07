@@ -5,7 +5,7 @@ import { findChildByNameRecursive } from '../../Utils/Tools';
 import CardLogic from '../../Utils/cardLogic';
 import { AudioMgr } from '../AudioMgr';
 import { GameMode } from '../GameMode/IGameModeView';
-import { judgeCardTypeShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
+import { judgeCardTypeShuangjian, judgeLastHandShortTripleShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
 import { getRoomMainAudio, RoomMainAudio } from '../../Utils/constant';
 const { ccclass, property } = _decorator;
 @ccclass('CardSelection')
@@ -249,6 +249,11 @@ export class CardSelection extends Component {
         return ranks[0] === 5 && ranks[1] === 10 && ranks[2] === 13;
     }
 
+    private isShuangjianLastHandShortTriple(selectCardNum: number[]) {
+        if (selectCardNum.length !== this.cards.length) return false;
+        return judgeLastHandShortTripleShuangjian(selectCardNum).valid;
+    }
+
     private getSelectedCardType(selectCardNum: number[]) {
         if (this.isShuangjianMode()) {
             return judgeCardTypeShuangjian(selectCardNum);
@@ -261,6 +266,7 @@ export class CardSelection extends Component {
             if (selectCardNum.length <= 0) return false;
             // 双剑牌型较多，先在客户端放行 510K，最终合法性由服务端校验。
             if (this.isShuangjian510K(selectCardNum)) return true;
+            if (this.isShuangjianLastHandShortTriple(selectCardNum)) return true;
             // 其他双剑牌型沿用双剑基础校验；压牌时不再使用斗地主 compare 拦截，交给服务端判断。
             return isYaPai ? true : judgeCardTypeShuangjian(selectCardNum).valid;
         }

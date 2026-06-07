@@ -993,6 +993,18 @@ AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.ring));
         });
     }
 
+    // 测试面板专用明牌：只给内部测试查看全员手牌，避免和正式明牌入口混用
+    async testMingPai() {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
+        const socket = await WebsocketMgr.instance({ url: this.socketUrl });
+        socket.send({
+            type: "testMingPai",
+            params: {
+                roomId: sys.localStorage.getItem("joinRoomId"),
+            }
+        });
+    }
+
     private onShuangjianPartnerRevealed(payload: any): void {
         const data = payload?.data || payload;
         if (!data || this.roomInfo?.game_mode !== GameMode.SHUANGJIAN) return;
