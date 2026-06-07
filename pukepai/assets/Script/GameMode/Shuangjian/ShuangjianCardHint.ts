@@ -324,12 +324,25 @@ export function compareShuangjian(previous: SjJudgeResult, current: SjJudgeResul
     return current.mainRank - previous.mainRank;
 }
 
+function sortHintCandidates(targetJ: SjJudgeResult | null, candidates: number[][]): number[][] {
+    return candidates.sort((a, b) => {
+        const aj = judgeCardTypeShuangjian(a);
+        const bj = judgeCardTypeShuangjian(b);
+        if (targetJ) {
+            const aw = categoryWeight(aj);
+            const bw = categoryWeight(bj);
+            if (aw !== bw) return aw - bw;
+        }
+        if (aj.mainRank !== bj.mainRank) return aj.mainRank - bj.mainRank;
+        if (a.length !== b.length) return a.length - b.length;
+        return Math.min(...a) - Math.min(...b);
+    });
+}
+
 /**
- * Suggest a single-card response or pair beating `targetCards`.
- * Falls back to bombs / king-bombs if available. Returns [] when no legal
- * response exists.
+ * Suggest all beating candidates from small to large.
  */
-export function cardHintShuangjian(targetCards: number[], myCards: number[]): number[] {
+export function cardHintsShuangjian(targetCards: number[], myCards: number[]): number[][] {
     const targetJ = targetCards.length === 0 ? null : judgeCardTypeShuangjian(targetCards);
     const byRank: { [r: number]: number[] } = {};
     for (const c of myCards) {
@@ -337,52 +350,54 @@ export function cardHintShuangjian(targetCards: number[], myCards: number[]): nu
         if (!byRank[r]) byRank[r] = [];
         byRank[r].push(c);
     }
+    const candidates: number[][] = [];
     if (!targetJ) {
         const orderedSmallToBig = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2, 53, 54];
         for (const r of orderedSmallToBig) {
-            if (byRank[r] && byRank[r].length === 1) return [byRank[r][0]];
+            if (byRank[r] && byRank[r].length === 1) candidates.push([byRank[r][0]]);
         }
-        return [];
+        return candidates;
     }
     if (targetJ.type === SjCardType.SINGLE) {
         const order = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2, 53, 54];
         for (const r of order) {
             const myRank = r === 1 ? 14 : (r === 2 ? 15 : (r === 53 ? 16 : (r === 54 ? 17 : r)));
-            if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length === 1) return [byRank[r][0]];
+            if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length === 1) candidates.push([byRank[r][0]]);
         }
     } else if (targetJ.type === SjCardType.PAIR) {
         const order = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1, 2];
         for (const r of order) {
             const myRank = r === 1 ? 14 : (r === 2 ? 15 : r);
             if (myRank > targetJ.mainRank && byRank[r] && byRank[r].length === 2) {
-                return byRank[r].slice(0, 2);
+                candidates.push(byRank[r].slice(0, 2));
             }
         }
     }
-    const fiveTenKCandidates = collectFiveTenKCandidates(byRank)
-        .sort((a, b) => categoryWeight(judgeCardTypeShuangjian(a)) - categoryWeight(judgeCardTypeShuangjian(b)) || a.length - b.length);
+    const fiveTenKCandidates = collectFiveTenKCandidates(byRank);
     for (const candidate of fiveTenKCandidates) {
         const cj = judgeCardTypeShuangjian(candidate);
-        if (compareShuangjian(targetJ, cj) > 0) return candidate;
+        if (compareShuangjian(targetJ, cj) > 0) candidates.push(candidate);
     }
     const bombRanks = Object.keys(byRank).map(Number)
         .filter(r => byRank[r].length >= 4 && r !== 53 && r !== 54);
-    if (bombRanks.length > 0) {
-        bombRanks.sort((a, b) => {
-            const ra = a === 1 ? 14 : (a === 2 ? 15 : a);
-            const rb = b === 1 ? 14 : (b === 2 ? 15 : b);
-            return ra - rb;
-        });
-        for (const r of bombRanks) {
-            const candidate = byRank[r].slice();
-            const cj = judgeCardTypeShuangjian(candidate);
-            if (compareShuangjian(targetJ, cj) > 0) return candidate;
-        }
+    for (const r of bombRanks) {
+        const candidate = byRank[r].slice();
+        const cj = judgeCardTypeShuangjian(candidate);
+        if (compareShuangjian(targetJ, cj) > 0) candidates.push(candidate);
     }
     const kings = (byRank[53] || []).concat(byRank[54] || []);
     if (kings.length >= 2) {
         const cj = judgeCardTypeShuangjian(kings);
-        if (compareShuangjian(targetJ, cj) > 0) return kings;
+        if (compareShuangjian(targetJ, cj) > 0) candidates.push(kings);
     }
-    return [];
+    return sortHintCandidates(targetJ, candidates);
+}
+
+/**
+ * Suggest a single-card response or pair beating `targetCards`.
+ * Falls back to bombs / king-bombs if available. Returns [] when no legal
+ * response exists.
+ */
+export function cardHintShuangjian(targetCards: number[], myCards: number[]): number[] {
+    return cardHintsShuangjian(targetCards, myCards)[0] || [];
 }

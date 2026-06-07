@@ -12,11 +12,10 @@ import { GameOver } from './GameOver';
 import { AudioMgr } from '../AudioMgr';
 import { getPlayAudio, getRoomMainAudio, getRoomMusicAudio, RoomMainAudio, RoomMusicAudio } from '../../Utils/constant';
 import { GameMode } from '../GameMode/IGameModeView';
-import { cardHintShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
+import { cardHintsShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
 const { ccclass, property } = _decorator;
 @ccclass('RoomPlayCard')
 export class RoomPlayCard extends Component {
-
     @property({
         type: RoomScene,
         displayName: "房间场景脚本"
@@ -159,8 +158,7 @@ export class RoomPlayCard extends Component {
             const safeTargetCards = targetCards || [];
             const safeMyCards = myCards || [];
             if (Number(this.roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN) {
-                const hint = cardHintShuangjian(safeTargetCards, safeMyCards);
-                return hint?.length > 0 ? [hint] : [];
+                return cardHintsShuangjian(safeTargetCards, safeMyCards) || [];
             }
             if (safeTargetCards.length <= 0) {
                 return safeMyCards.length > 0 ? [[safeMyCards[0]]] : [];
@@ -649,8 +647,11 @@ export class RoomPlayCard extends Component {
             if (this.hintCardNum > hintCardList.length - 1) {
                 this.hintCardNum = 0;
             }
-            // 提示卡牌
-            this.myCardParentNode.getComponent(CardSelection).hintSelectCard(hintCardList[hintCardList.length - 1 - this.hintCardNum]);
+            // 提示卡牌；双剑候选已按从小到大排序，普通玩法保留原来的倒序轮询。
+            const hintIndex = Number(this.roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN
+                ? this.hintCardNum
+                : hintCardList.length - 1 - this.hintCardNum;
+            this.myCardParentNode.getComponent(CardSelection).hintSelectCard(hintCardList[hintIndex]);
             // 提示次数加1
             this.hintCardNum++;
         } else {
