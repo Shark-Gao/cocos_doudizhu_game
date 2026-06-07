@@ -1,4 +1,4 @@
-import { _decorator, Button, Color, Component, instantiate, Label, Node, Prefab, Sprite, sys, tween, UITransform, Vec3, Widget, director, AudioClip } from 'cc';
+import { _decorator, Button, Color, Component, instantiate, Label, Node, Prefab, Sprite, sys, tween, UITransform, Vec3, Widget, director, AudioClip, Toggle } from 'cc';
 import { WebsocketMgr } from '../Api/WebsocketMgr';
 import { eventTarget } from '../../Utils/EventListening';
 import { findChildByNameRecursive, playCardAudio, toRealCard } from '../../Utils/Tools';
@@ -94,10 +94,40 @@ export class RoomPlayCard extends Component {
         // 双剑专属：结算推送
         eventTarget.on("shuangjianGameOver", this.onShuangjianGameOver, this);
         this.bindFiveTenKButton();
+        this.bindSortFiveTenKToggle();
         this.setFiveTenKButtonActive(false);
 
         // 测试提示方法
         // console.log("提示出牌", CardHint.cardHint([], [17, 17, 17, 4, 5, 6, 7, 8, 54]))
+    }
+
+    private getSortFiveTenKToggle(): Toggle | null {
+        const sortNode = findChildByNameRecursive(this.myInfoNode, "Sort510K") || findChildByNameRecursive(this.node, "Sort510K");
+        return sortNode?.getComponent(Toggle) || null;
+    }
+
+    private bindSortFiveTenKToggle() {
+        const sortToggle = this.getSortFiveTenKToggle();
+        if (!sortToggle) return;
+        sortToggle.node.off(Toggle.EventType.TOGGLE, this.onSortFiveTenKToggle, this);
+        sortToggle.node.on(Toggle.EventType.TOGGLE, this.onSortFiveTenKToggle, this);
+        sortToggle.isChecked = true;
+        this.applySortFiveTenKToggle(true, false);
+    }
+
+    private applySortFiveTenKToggle(enabled: boolean, needSort: boolean = true) {
+        const myCardCom = this.myCardParentNode?.getComponent(Card);
+        if (!myCardCom) return;
+        myCardCom.setSortFiveTenKGroups(enabled);
+        if (needSort) {
+            myCardCom.cardSort(() => {
+                this.myCardParentNode.getComponent(CardSelection)?.initSelectCard();
+            });
+        }
+    }
+
+    private onSortFiveTenKToggle(toggle: Toggle) {
+        this.applySortFiveTenKToggle(toggle.isChecked);
     }
 
     private getFiveTenKButton(): Node | null {
@@ -130,6 +160,7 @@ export class RoomPlayCard extends Component {
         eventTarget.off("replaceLogin", this.onReplaceLogin, this);
         eventTarget.off("shuangjianGameOver", this.onShuangjianGameOver, this);
         this.getFiveTenKButton()?.off(Button.EventType.CLICK, this.selectFiveTenK, this);
+        this.getSortFiveTenKToggle()?.node.off(Toggle.EventType.TOGGLE, this.onSortFiveTenKToggle, this);
     }
 
     update(deltaTime: number) {
@@ -146,10 +177,12 @@ export class RoomPlayCard extends Component {
     private onDealCards() {
         this.hasPlayedExcitingMusic = false;
         this.fiveTenKHintNum = 0;
+        this.applySortFiveTenKToggle(this.getSortFiveTenKToggle()?.isChecked || false, false);
         this.setFiveTenKButtonActive(false);
     }
 
     private onDealCardsAmt() {
+        this.applySortFiveTenKToggle(this.getSortFiveTenKToggle()?.isChecked || false);
         this.setFiveTenKButtonActive(true);
     }
 
@@ -480,6 +513,10 @@ export class RoomPlayCard extends Component {
     // 监听取消托管
     onCancelTrusteeship({ data, code }) {
         if (code == 200) {
+            if (this.roomScene?.roomInfo?.roomUsers?.[data.userId]) {
+                this.roomScene.roomInfo.roomUsers[data.userId].is_hosted = false;
+            }
+
             // 获取节点上的用户分别都是谁
             const userNodeId = this.roomScene.getUserNodeInfo();
             userNodeId.forEach(({ nodeId, node }) => {
@@ -488,6 +525,23 @@ export class RoomPlayCard extends Component {
                     findChildByNameRecursive(node, "Trusteeship").active = false;
                 }
             })
+
+            if (data.userId == this.userInfo.user_id) {
+                this.firstGetPlayCardTimeDown = true;
+                findChildByNameRecursive(this.myInfoNode, "Regardless").active = false;
+                const playHandBtn = findChildByNameRecursive(this.myInfoNode, "PlayHandBtn");
+                const timeDown = findChildByNameRecursive(this.myInfoNode, "TimeDown");
+                if (data.currentPlayCardUser == this.userInfo.user_id) {
+                    if (playHandBtn) {
+                        playHandBtn.active = true;
+                    }
+                    if (timeDown) {
+                        timeDown.active = true;
+                    }
+                    this.setFiveTenKButtonActive(true);
+                    this.myCardParentNode.getComponent(CardSelection).updatePlayCardBtnStyle();
+                }
+            }
         }
     }
 

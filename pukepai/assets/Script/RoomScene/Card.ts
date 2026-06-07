@@ -44,9 +44,20 @@ export class Card extends Component {
         displayName: '卡牌渲染类型',
     })
     cardUser: DropdownOptions = DropdownOptions.my;
+    private sortFiveTenKGroups: boolean = true;
+    private gameMode: number | null = null;
 
     start() {
 
+    }
+
+    public setSortFiveTenKGroups(enabled: boolean) {
+        this.sortFiveTenKGroups = enabled;
+    }
+
+    public setGameMode(gameMode: any) {
+        const mode = Number(gameMode);
+        this.gameMode = Number.isNaN(mode) ? null : mode;
     }
 
     // 初始化卡牌
@@ -97,7 +108,17 @@ export class Card extends Component {
         return (realCard - 1) % 13 + 1;
     }
 
+    private getShuangjianSortedCardList(cards: number[]) {
+        const rankOrder = [54, 53, 2, 1, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
+        return cards.slice().sort((a, b) => {
+            const rankCompare = rankOrder.indexOf(this.getRank(a)) - rankOrder.indexOf(this.getRank(b));
+            if (rankCompare !== 0) return rankCompare;
+            return toRealCard(a) - toRealCard(b);
+        });
+    }
+
     private isShuangjianMode() {
+        if (this.gameMode !== null) return this.gameMode === GameMode.SHUANGJIAN;
         const roomScene = (this.node.getComponent('CardSelection') as CardSelection)?.roomScene;
         return Number(roomScene?.roomInfo?.game_mode) === GameMode.SHUANGJIAN;
     }
@@ -120,12 +141,19 @@ export class Card extends Component {
         return result;
     }
 
-    private collectShuangjianDisplayGroups() {
+    private getFiveTenKSortResult(cards: number[]): SjJudgeResult | null {
+        if (!this.sortFiveTenKGroups || cards.length < 3 || cards.length % 3 !== 0) return null;
+        const result = judgeCardTypeShuangjian(cards);
+        if (!result.valid || result.type !== SjCardType.FIVE_TEN_K) return null;
+        return result;
+    }
+
+    private collectShuangjianDisplayGroups(cardList: number[]) {
         const groups: { cards: number[], result: SjJudgeResult, minIndex: number }[] = [];
         const usedIndexes: { [index: number]: boolean } = {};
         const rankMap: { [rank: number]: { card: number, index: number }[] } = {};
 
-        this.cardList.forEach((card, index) => {
+        cardList.forEach((card, index) => {
             const rank = this.getRank(card);
             if (!rankMap[rank]) rankMap[rank] = [];
             rankMap[rank].push({ card, index });
@@ -146,7 +174,34 @@ export class Card extends Component {
             sameRankCards.forEach(item => usedIndexes[item.index] = true);
         });
 
-        const kingCards = this.cardList
+        if (this.sortFiveTenKGroups) {
+            const fives = rankMap[5] || [];
+            const tens = rankMap[10] || [];
+            const kings = rankMap[13] || [];
+            const groupCount = Math.min(fives.length, tens.length, kings.length);
+            const addFiveTenKGroup = (groupCards: { card: number, index: number }[]) => {
+                if (groupCards.some(item => usedIndexes[item.index])) return;
+                const cards = groupCards.map(item => item.card);
+                const result = this.getFiveTenKSortResult(cards);
+                if (!result) return;
+                groups.push({
+                    cards,
+                    result,
+                    minIndex: Math.min(...groupCards.map(item => item.index)),
+                });
+                groupCards.forEach(item => usedIndexes[item.index] = true);
+            };
+
+            if (groupCount === 2) {
+                for (let i = 0; i < groupCount; i++) {
+                    addFiveTenKGroup([fives[i], tens[i], kings[i]]);
+                }
+            } else if (groupCount > 0) {
+                addFiveTenKGroup(fives.slice(0, groupCount).concat(tens.slice(0, groupCount), kings.slice(0, groupCount)));
+            }
+        }
+
+        const kingCards = cardList
             .map((card, index) => ({ card, index }))
             .filter(item => {
                 const rank = this.getRank(item.card);
@@ -171,8 +226,9 @@ export class Card extends Component {
     private getMyDisplayCardList() {
         if (!this.isShuangjianMode()) return this.cardList;
 
-        const { groups, usedIndexes } = this.collectShuangjianDisplayGroups();
-        if (groups.length <= 0) return this.cardList;
+        const baseCardList = this.getShuangjianSortedCardList(this.cardList);
+        const { groups, usedIndexes } = this.collectShuangjianDisplayGroups(baseCardList);
+        if (groups.length <= 0) return baseCardList;
 
         groups.sort((a, b) => {
             const compareResult = compareShuangjian(a.result, b.result);
@@ -180,7 +236,7 @@ export class Card extends Component {
             return a.minIndex - b.minIndex;
         });
 
-        const restCards = this.cardList.filter((_, index) => !usedIndexes[index]);
+        const restCards = baseCardList.filter((_, index) => !usedIndexes[index]);
         return groups.reduce((list, group) => list.concat(group.cards), []).concat(restCards);
     }
 

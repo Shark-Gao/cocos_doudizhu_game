@@ -1,4 +1,4 @@
-import { _decorator, Component, director, Label, Node, resources, SpriteFrame, sys, Animation, UITransform, Widget, instantiate, Prefab, find, game, UIOpacity, Input, input, EventTouch } from 'cc';
+import { _decorator, Component, director, Label, Node, resources, SpriteFrame, sys, Animation, UITransform, Widget, instantiate, Prefab, find, game, UIOpacity, Input, input, EventTouch, Sprite } from 'cc';
 import { Card } from './Card';
 import { WebsocketMgr } from '../Api/WebsocketMgr';
 import { eventTarget } from '../../Utils/EventListening';
@@ -108,6 +108,11 @@ export class RoomScene extends Component {
         displayName: "分享按钮"
     })
     share: Node = null;
+    @property({
+        type: [SpriteFrame],
+        displayName: "电量图标"
+    })
+    batterySpriteFrames: SpriteFrame[] = [];
 
 
     // 3个用户的卡片
@@ -126,8 +131,10 @@ export class RoomScene extends Component {
     private modeLifecycle: ShuangjianRoomLifecycle | null = null;
     private readonly testPanelTouchCount = 5;
     private readonly testPanelLongPressTime = 1.5;
+    private readonly batteryRefreshInterval = 60;
     private isTestPanelLongPressing: boolean = false;
     private testPanelNode: Node = null;
+    private batteryNode: Node = null;
 
     start() {
         try {
@@ -197,6 +204,7 @@ export class RoomScene extends Component {
         // 监听双剑队友公开
         eventTarget.on("shuangjian:partnerRevealed", this.onShuangjianPartnerRevealed, this);
         this.initTestPanelShortcut();
+        this.initBatteryDisplay();
     }
 
     update(deltaTime: number) {
@@ -207,6 +215,7 @@ export class RoomScene extends Component {
         input.off(Input.EventType.TOUCH_END, this.onTestPanelTouchEnd, this);
         input.off(Input.EventType.TOUCH_CANCEL, this.onTestPanelTouchEnd, this);
         this.unschedule(this.toggleTestPanelByLongPress);
+        this.unschedule(this.refreshBatteryDisplay);
         // 先拆除双剑 modeView 的 socket 订阅，避免身份切换/退出后事件泄露
         if (this.modeLifecycle) {
             this.modeLifecycle.detach();
@@ -256,6 +265,53 @@ export class RoomScene extends Component {
                 console.log('右侧刘海宽度：', hasRightNotch ? (screenWidth - safeArea.right) : 0);
             }
         }
+    }
+
+    private initBatteryDisplay() {
+        this.batteryNode = findChildByNameRecursive(this.node, "Battery");
+        if (!this.batteryNode) return;
+
+        this.refreshBatteryDisplay();
+        this.schedule(this.refreshBatteryDisplay, this.batteryRefreshInterval);
+    }
+
+    private refreshBatteryDisplay() {
+        if (!this.batteryNode) {
+            this.batteryNode = findChildByNameRecursive(this.node, "Battery");
+        }
+        if (!this.batteryNode) return;
+
+        const batteryLevel = this.getBatteryLevel();
+        const batteryValue = findChildByNameRecursive(this.batteryNode, "BatteryValue");
+        if (batteryValue) {
+            const batteryValueLabel = batteryValue.getComponent(Label);
+            if (batteryValueLabel) {
+                batteryValueLabel.string = `${batteryLevel}`;
+            }
+        }
+
+        const batteryIndex = Math.min(5, Math.max(1, Math.ceil(batteryLevel / 20)));
+        const batterySprite = this.batteryNode.getComponent(Sprite);
+        const batterySpriteFrame = this.batterySpriteFrames[batteryIndex - 1];
+        if (batterySprite && batterySpriteFrame) {
+            batterySprite.spriteFrame = batterySpriteFrame;
+        }
+    }
+
+    private getBatteryLevel(): number {
+        try {
+            if (window.wx?.getBatteryInfoSync) {
+                const batteryInfo = window.wx.getBatteryInfoSync();
+                const level = Number(batteryInfo?.level);
+                if (!Number.isNaN(level)) {
+                    return Math.min(100, Math.max(0, Math.round(level)));
+                }
+            }
+        } catch (error) {
+            console.log("获取电量失败", error);
+        }
+
+        return 100;
     }
     // 监听被挤掉线
     onReplaceLogin({ data, code, message }) {
@@ -795,6 +851,7 @@ export class RoomScene extends Component {
             const userInfo = roomUsers[nodeId];
             if (userInfo) {
                 const cardJs = cardParentNode.getComponent(Card);
+                cardJs.setGameMode(this.roomInfo?.game_mode);
                 cardJs.cardList = userInfo.user_card;
                 // 创建卡牌
                 cardJs.init(isFirstInit);

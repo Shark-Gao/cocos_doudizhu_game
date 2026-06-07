@@ -5,7 +5,7 @@ import { findChildByNameRecursive } from '../../Utils/Tools';
 import CardLogic from '../../Utils/cardLogic';
 import { AudioMgr } from '../AudioMgr';
 import { GameMode } from '../GameMode/IGameModeView';
-import { judgeCardTypeShuangjian, judgeLastHandShortTripleShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
+import { judgeCardTypeShuangjian, judgeLastHandShortTripleShuangjian, compareShuangjian } from '../GameMode/Shuangjian/ShuangjianCardHint';
 import { getRoomMainAudio, RoomMainAudio } from '../../Utils/constant';
 const { ccclass, property } = _decorator;
 @ccclass('CardSelection')
@@ -80,15 +80,17 @@ export class CardSelection extends Component {
 
     // 获取当前选中的扑克牌
     getSelectCards() {
-        return this.preSelectedCards.map(card => {
-            const cardItem = card.getComponent(CardItem);
-            return {
-                card: card,
-                cardNum: cardItem.cardNum,
-                cardType: cardItem.cardType,
-                cardIndex: cardItem.cardIndex || (cardItem.cardNum + cardItem.cardType * 13)
-            }
-        });
+        return this.cards
+            .filter(({ card }) => this.preSelectedCards.indexOf(card) !== -1)
+            .map(({ card }) => {
+                const cardItem = card.getComponent(CardItem);
+                return {
+                    card: card,
+                    cardNum: cardItem.cardNum,
+                    cardType: cardItem.cardType,
+                    cardIndex: cardItem.cardIndex || (cardItem.cardNum + cardItem.cardType * 13)
+                }
+            });
     }
 
     private isTouchInCards(position: Vec2) {
@@ -254,9 +256,18 @@ export class CardSelection extends Component {
         return judgeLastHandShortTripleShuangjian(selectCardNum).valid;
     }
 
+    private getShuangjianPlayableType(cardList: number[]) {
+        const normalType = judgeCardTypeShuangjian(cardList);
+        if (normalType.valid) return normalType;
+        if (cardList.length === this.cards.length) {
+            return judgeLastHandShortTripleShuangjian(cardList);
+        }
+        return normalType;
+    }
+
     private getSelectedCardType(selectCardNum: number[]) {
         if (this.isShuangjianMode()) {
-            return judgeCardTypeShuangjian(selectCardNum);
+            return this.getShuangjianPlayableType(selectCardNum);
         }
         return CardLogic.judgeCardType(selectCardNum);
     }
@@ -264,11 +275,13 @@ export class CardSelection extends Component {
     private canPlaySelectedCards(lastRecord, selectCardNum: number[], isYaPai: boolean) {
         if (this.isShuangjianMode()) {
             if (selectCardNum.length <= 0) return false;
-            // 双剑牌型较多，先在客户端放行 510K，最终合法性由服务端校验。
-            if (this.isShuangjian510K(selectCardNum)) return true;
-            if (this.isShuangjianLastHandShortTriple(selectCardNum)) return true;
-            // 其他双剑牌型沿用双剑基础校验；压牌时不再使用斗地主 compare 拦截，交给服务端判断。
-            return isYaPai ? true : judgeCardTypeShuangjian(selectCardNum).valid;
+            const selectedType = this.getShuangjianPlayableType(selectCardNum);
+            if (!selectedType.valid) return false;
+            if (!isYaPai) return true;
+
+            const targetType = judgeCardTypeShuangjian(lastRecord?.playCard || [], true);
+            if (!targetType.valid) return true;
+            return compareShuangjian(targetType, selectedType) > 0;
         }
 
         if (isYaPai) {
