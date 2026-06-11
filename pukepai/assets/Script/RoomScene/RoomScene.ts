@@ -1,4 +1,4 @@
-import { _decorator, Component, director, Label, Node, resources, SpriteFrame, sys, Animation, UITransform, Widget, instantiate, Prefab, find, game, UIOpacity, Input, input, EventTouch, Sprite } from 'cc';
+import { _decorator, Button, Color, Component, director, Graphics, HorizontalTextAlignment, Label, Node, resources, SpriteFrame, sys, Animation, UITransform, Widget, instantiate, Prefab, find, game, UIOpacity, Input, input, EventTouch, Sprite, Size, tween, Vec3, VerticalTextAlignment } from 'cc';
 import { Card } from './Card';
 import { WebsocketMgr } from '../Api/WebsocketMgr';
 import { eventTarget } from '../../Utils/EventListening';
@@ -13,7 +13,7 @@ import { CardItem } from './CardItem';
 import { CardSelection } from './CardSelection';
 import { CONFIG } from '../Config';
 import { AudioMgr } from '../AudioMgr';
-import { GameModel, getPlayAudio, getRoomMainAudio, getRoomMusicAudio, RoomMainAudio, RoomMusicAudio } from '../../Utils/constant';
+import { GameModel, getPlayAudio, getQuickVoiceAudio, getQuickVoicePhrase, getRoomMainAudio, getRoomMusicAudio, quickVoicePhrases, RoomMainAudio, RoomMusicAudio } from '../../Utils/constant';
 import { RoomPlayCard } from './RoomPlayCard';
 import Global from '../../Utils/Global';
 import { ShuangjianRoomLifecycle } from '../GameMode/ShuangjianRoomLifecycle';
@@ -135,6 +135,10 @@ export class RoomScene extends Component {
     private isTestPanelLongPressing: boolean = false;
     private testPanelNode: Node = null;
     private batteryNode: Node = null;
+    private quickVoiceButtonNode: Node = null;
+    private quickVoicePanelNode: Node = null;
+    private quickVoiceCooldownUntil: number = 0;
+    private quickVoiceBubbleNodes: { [userId: string]: Node } = {};
 
     start() {
         try {
@@ -199,12 +203,15 @@ export class RoomScene extends Component {
         eventTarget.on("replaceLogin", this.onReplaceLogin, this);
         // 用户掉线（非手动退出）
         eventTarget.on("userlostConnection", this.onUserlostConnection, this);
+        // 快捷语音
+        eventTarget.on("quickVoice", this.onQuickVoice, this);
         // 监听底牌动画播放结束
         this.bottomCardAmtNode.getComponent(Animation).on(Animation.EventType.FINISHED, this.onBottomCardAmt, this)
         // 监听双剑队友公开
         eventTarget.on("shuangjian:partnerRevealed", this.onShuangjianPartnerRevealed, this);
         this.initTestPanelShortcut();
         this.initBatteryDisplay();
+        this.initQuickVoiceUI();
     }
 
     update(deltaTime: number) {
@@ -239,6 +246,7 @@ export class RoomScene extends Component {
         eventTarget.off("replaceLogin", this.onReplaceLogin, this);
         eventTarget.off("userConnectionSuccess", this.onUserConnectionSuccess, this);
         eventTarget.off("shuangjian:partnerRevealed", this.onShuangjianPartnerRevealed, this);
+        eventTarget.off("quickVoice", this.onQuickVoice, this);
     }
 
     // ui 刘海兼容问题
@@ -312,6 +320,206 @@ export class RoomScene extends Component {
         }
 
         return 100;
+    }
+
+    private initQuickVoiceUI(): void {
+        if (this.quickVoiceButtonNode) return;
+
+        this.quickVoiceButtonNode = this.createQuickVoiceButton();
+        this.node.addChild(this.quickVoiceButtonNode);
+        this.quickVoicePanelNode = this.createQuickVoicePanel();
+        this.node.addChild(this.quickVoicePanelNode);
+        this.quickVoicePanelNode.active = false;
+    }
+
+    private createQuickVoiceButton(): Node {
+        const buttonNode = this.createBoxNode("QuickVoiceBtn", new Size(96, 42), new Color(30, 35, 45, 210), 8);
+        const widget = buttonNode.addComponent(Widget);
+        widget.isAlignRight = true;
+        widget.right = 24;
+        widget.isAlignBottom = true;
+        widget.bottom = 165;
+        widget.alignMode = Widget.AlignMode.ON_WINDOW_RESIZE;
+        buttonNode.addComponent(Button);
+        this.addLabel(buttonNode, "语音", 22, new Color(255, 255, 255, 255));
+        buttonNode.on(Node.EventType.TOUCH_END, this.toggleQuickVoicePanel, this);
+        return buttonNode;
+    }
+
+    private createQuickVoicePanel(): Node {
+        const canvasSize = this.node.getComponent(UITransform)?.contentSize || new Size(1280, 720);
+        const panelNode = this.createBoxNode("QuickVoicePanel", canvasSize, new Color(0, 0, 0, 90), 0);
+        panelNode.on(Node.EventType.TOUCH_END, this.hideQuickVoicePanel, this);
+
+        const contentHeight = 430;
+        const contentNode = this.createBoxNode("QuickVoiceContent", new Size(560, contentHeight), new Color(28, 32, 42, 245), 12);
+        contentNode.setPosition(new Vec3(0, 0, 0));
+        contentNode.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
+            event.propagationStopped = true;
+        });
+        panelNode.addChild(contentNode);
+
+        const titleNode = new Node("Title");
+        titleNode.layer = this.node.layer;
+        titleNode.setPosition(new Vec3(0, contentHeight / 2 - 38, 0));
+        this.addLabel(titleNode, "快捷语音", 24, new Color(255, 236, 190, 255));
+        contentNode.addChild(titleNode);
+
+        quickVoicePhrases.forEach((phrase, index) => {
+            const optionNode = this.createQuickVoiceOption(phrase.id, phrase.text);
+            const col = index % 2;
+            const row = Math.floor(index / 2);
+            optionNode.setPosition(new Vec3(col === 0 ? -138 : 138, contentHeight / 2 - 92 - row * 54, 0));
+            contentNode.addChild(optionNode);
+        });
+
+        return panelNode;
+    }
+
+    private createQuickVoiceOption(voiceId: number, text: string): Node {
+        const optionNode = this.createBoxNode(`QuickVoiceOption${voiceId}`, new Size(250, 42), new Color(52, 61, 78, 235), 8);
+        optionNode.addComponent(Button);
+        this.addLabel(optionNode, text, 16, new Color(255, 255, 255, 255), 225);
+        optionNode.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
+            event.propagationStopped = true;
+            this.sendQuickVoice(voiceId);
+        });
+        return optionNode;
+    }
+
+    private createBoxNode(name: string, size: Size, color: Color, radius: number): Node {
+        const node = new Node(name);
+        node.layer = this.node.layer;
+        node.addComponent(UITransform).setContentSize(size);
+        const graphics = node.addComponent(Graphics);
+        graphics.fillColor = color;
+        if (radius > 0) {
+            graphics.roundRect(-size.width / 2, -size.height / 2, size.width, size.height, radius);
+        } else {
+            graphics.rect(-size.width / 2, -size.height / 2, size.width, size.height);
+        }
+        graphics.fill();
+        return node;
+    }
+
+    private addLabel(parent: Node, text: string, fontSize: number, color: Color, width?: number): Label {
+        const labelNode = new Node("Label");
+        labelNode.layer = this.node.layer;
+        const label = labelNode.addComponent(Label);
+        label.string = text;
+        label.fontSize = fontSize;
+        label.lineHeight = fontSize + 4;
+        label.color = color;
+        label.horizontalAlign = HorizontalTextAlignment.CENTER;
+        label.verticalAlign = VerticalTextAlignment.CENTER;
+        label.overflow = width ? Label.Overflow.SHRINK : Label.Overflow.NONE;
+        const parentSize = parent.getComponent(UITransform)?.contentSize || new Size(100, 40);
+        const transform = labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform);
+        transform.setContentSize(new Size(width || parentSize.width, parentSize.height));
+        parent.addChild(labelNode);
+        return label;
+    }
+
+    private toggleQuickVoicePanel(): void {
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.click));
+        if (!this.quickVoicePanelNode) return;
+        this.quickVoicePanelNode.active = !this.quickVoicePanelNode.active;
+    }
+
+    private hideQuickVoicePanel(): void {
+        if (this.quickVoicePanelNode) {
+            this.quickVoicePanelNode.active = false;
+        }
+    }
+
+    private async sendQuickVoice(voiceId: number): Promise<void> {
+        const now = Date.now();
+        if (now < this.quickVoiceCooldownUntil) {
+            CommonUIManager.inst.showToast("语音发送太频繁了");
+            return;
+        }
+        this.quickVoiceCooldownUntil = now + 1500;
+        this.hideQuickVoicePanel();
+
+        const socket = await WebsocketMgr.instance({ url: this.socketUrl });
+        socket.send({
+            type: "quickVoice",
+            params: {
+                roomId: sys.localStorage.getItem("joinRoomId"),
+                voiceId,
+            }
+        });
+    }
+
+    private onQuickVoice({ data, code, message }) {
+        if (code != 200) {
+            message && CommonUIManager.inst.showToast(message);
+            return;
+        }
+
+        const phrase = getQuickVoicePhrase(data?.voiceId);
+        if (phrase?.text) {
+            this.showQuickVoiceBubble(data?.userId, phrase.text);
+        }
+
+        AudioMgr.inst.playOneShot(getRoomMainAudio(RoomMainAudio.chat));
+        const audioUrl = getQuickVoiceAudio(data?.voiceId, this.roomInfo?.roomUsers?.[data?.userId]);
+        if (audioUrl) {
+            this.scheduleOnce(() => {
+                AudioMgr.inst.playOneShot(audioUrl);
+            }, 0.12);
+        }
+    }
+
+    private showQuickVoiceBubble(userId: any, text: string): void {
+        const userNode = this.getUserNodeInfo().find(({ nodeId }) => String(nodeId) === String(userId))?.node;
+        const anchorNode = userNode ? (findChildByNameRecursive(userNode, "UserHead") || userNode) : null;
+        if (!anchorNode) {
+            CommonUIManager.inst.showToast(text, 1.5);
+            return;
+        }
+
+        const key = String(userId);
+        const oldBubble = this.quickVoiceBubbleNodes[key];
+        if (oldBubble && oldBubble.isValid) {
+            oldBubble.destroy();
+        }
+
+        const bubble = this.createQuickVoiceBubbleNode(text);
+        const anchorSize = anchorNode.getComponent(UITransform)?.contentSize || new Size(80, 80);
+        const anchorWorldPos = anchorNode.worldPosition.clone();
+        anchorWorldPos.y += anchorSize.height / 2 + 36;
+        const roomTransform = this.node.getComponent(UITransform);
+        const localPos = roomTransform
+            ? roomTransform.convertToNodeSpaceAR(anchorWorldPos)
+            : anchorWorldPos;
+        bubble.setPosition(localPos);
+        this.node.addChild(bubble);
+        bubble.setSiblingIndex(this.node.children.length - 1);
+        this.quickVoiceBubbleNodes[key] = bubble;
+
+        const opacity = bubble.getComponent(UIOpacity) || bubble.addComponent(UIOpacity);
+        opacity.opacity = 0;
+        tween(opacity)
+            .to(0.12, { opacity: 255 })
+            .delay(1.6)
+            .to(0.18, { opacity: 0 })
+            .call(() => {
+                if (this.quickVoiceBubbleNodes[key] === bubble) {
+                    delete this.quickVoiceBubbleNodes[key];
+                }
+                bubble.destroy();
+            })
+            .start();
+    }
+
+    private createQuickVoiceBubbleNode(text: string): Node {
+        const bubbleWidth = 260;
+        const bubbleHeight = 54;
+        const bubble = this.createBoxNode("QuickVoiceBubble", new Size(bubbleWidth, bubbleHeight), new Color(32, 36, 46, 235), 12);
+        const label = this.addLabel(bubble, text, 17, new Color(255, 255, 255, 255), bubbleWidth - 24);
+        label.lineHeight = 21;
+        return bubble;
     }
     // 监听被挤掉线
     onReplaceLogin({ data, code, message }) {

@@ -167,6 +167,38 @@ export function getPlayAudio(audio: string, userInfo?: any): string {
   return getPackagePlayAudio(packageName, audio) || getPackagePlayAudio(defaultAudioPackageName, audio) || "";
 }
 
+export interface QuickVoicePhrase {
+  id: number;
+  text: string;
+  audio: string;
+}
+
+export const quickVoicePhrases: QuickVoicePhrase[] = [
+  { id: 1, text: "快点儿吧，我等的花儿都谢了", audio: "msgChatMsg03" },
+  { id: 2, text: "和你合作真是太愉快了", audio: "msgChatMsg02" },
+  { id: 3, text: "你的牌打得也太好了", audio: "msgChatMsg04" },
+  { id: 4, text: "不要走，决战到天亮", audio: "msgChatMsg08" },
+  { id: 5, text: "怎么又断线了，网络怎么这么差啊", audio: "msgChatMsg06" },
+  { id: 6, text: "各位不好意思，我要离开一会儿", audio: "msgChatMsg07" },
+  { id: 7, text: "不要吵了，专心玩游戏吧", audio: "msgChatMsg05" },
+  { id: 8, text: "你是妹妹还是哥哥啊", audio: "msgChatMsg09" },
+  { id: 9, text: "大家好，很高兴见到各位", audio: "msgChatMsg01" },
+  { id: 10, text: "交个朋友吧，能告诉我联系方式吗", audio: "msgChatMsg10" },
+  { id: 11, text: "再见了，我会想念大家的", audio: "msgChatMsg11" },
+  { id: 12, text: "不好意思哦，我出错牌了", audio: "msgChatMsg12" },
+];
+
+export function getQuickVoicePhrase(voiceId: number): QuickVoicePhrase | null {
+  return quickVoicePhrases.find(item => item.id === Number(voiceId)) || null;
+}
+
+export function getQuickVoiceAudio(voiceId: number, userInfo?: any): string {
+  const phrase = getQuickVoicePhrase(voiceId);
+  if (!phrase) return "";
+  const packageName = getUserAudioPackageName(userInfo);
+  return getPackagePlayAudio(packageName, phrase.audio) || getPackagePlayAudio(defaultAudioPackageName, phrase.audio) || "";
+}
+
 const sweetGirlPlayAudios: Record<string, string> = {
   [AudioType.shunzi]: sweetGirlAudio + AudioType.shunzi,
   [AudioType.liandui]: sweetGirlAudio + AudioType.liandui,
@@ -186,6 +218,10 @@ const sweetGirlPlayAudios: Record<string, string> = {
   [AudioType.qiangdizhu]: sweetGirlAudio + "order",
   [AudioType.buqiang]: sweetGirlAudio + "noorder",
 };
+
+quickVoicePhrases.forEach(item => {
+  sweetGirlPlayAudios[item.audio] = sweetGirlAudio + item.audio;
+});
 
 for (let cardNum = 1; cardNum <= 13; cardNum++) {
   sweetGirlPlayAudios[AudioType[`one_${cardNum}`]] = sweetGirlAudio + `1${String(cardNum).padStart(2, "0")}`;
