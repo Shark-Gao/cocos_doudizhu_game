@@ -11,6 +11,7 @@ import { BUILD } from 'cc/env';
 import { CardItem } from './CardItem';
 import type { CardSelection } from './CardSelection';
 import { toRealCard } from '../../Utils/Tools';
+import { getClientCardRank, sortCardGroupsForDisplay, sortCardsByRankDesc } from '../../Utils/clientCardSort';
 import { GameMode } from '../GameMode/IGameModeView';
 import { compareShuangjian, judgeCardTypeShuangjian, SjCardType } from '../GameMode/Shuangjian/ShuangjianCardHint';
 import type { SjJudgeResult } from '../GameMode/Shuangjian/ShuangjianCardHint';
@@ -103,18 +104,11 @@ export class Card extends Component {
     }
 
     private getRank(cardIndex: number) {
-        const realCard = toRealCard(cardIndex);
-        if (realCard === 53 || realCard === 54) return realCard;
-        return (realCard - 1) % 13 + 1;
+        return getClientCardRank(cardIndex);
     }
 
     private getShuangjianSortedCardList(cards: number[]) {
-        const rankOrder = [54, 53, 2, 1, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
-        return cards.slice().sort((a, b) => {
-            const rankCompare = rankOrder.indexOf(this.getRank(a)) - rankOrder.indexOf(this.getRank(b));
-            if (rankCompare !== 0) return rankCompare;
-            return toRealCard(a) - toRealCard(b);
-        });
+        return sortCardsByRankDesc(cards);
     }
 
     private isShuangjianMode() {
@@ -224,11 +218,11 @@ export class Card extends Component {
     }
 
     private getMyDisplayCardList() {
-        if (!this.isShuangjianMode()) return this.cardList;
+        if (!this.isShuangjianMode()) return sortCardGroupsForDisplay(this.cardList);
 
         const baseCardList = this.getShuangjianSortedCardList(this.cardList);
         const { groups, usedIndexes } = this.collectShuangjianDisplayGroups(baseCardList);
-        if (groups.length <= 0) return baseCardList;
+        if (groups.length <= 0) return sortCardGroupsForDisplay(baseCardList);
 
         groups.sort((a, b) => {
             const compareResult = compareShuangjian(a.result, b.result);
@@ -237,7 +231,7 @@ export class Card extends Component {
         });
 
         const restCards = baseCardList.filter((_, index) => !usedIndexes[index]);
-        return groups.reduce((list, group) => list.concat(group.cards), []).concat(restCards);
+        return groups.reduce((list, group) => list.concat(group.cards), []).concat(sortCardGroupsForDisplay(restCards, { includeBombs: false }));
     }
 
     // 初始化我的牌, isDealCards：是否第一次发牌，第一次执行动画默认隐藏卡牌
